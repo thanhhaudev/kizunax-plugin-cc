@@ -60,11 +60,9 @@ func setupCheck() error {
 		fmt.Printf("✗ %v\n", err)
 		return nil
 	}
-	if pa, ok := p.(*provider.OpenAIAdapter); ok {
-		if err := pa.Probe(context.Background()); err != nil {
-			fmt.Printf("✗ %v\n", err)
-			return nil
-		}
+	if err := p.Probe(context.Background()); err != nil {
+		fmt.Printf("✗ %v\n", err)
+		return nil
 	}
 	fmt.Println("✓ ok")
 	return nil
@@ -89,6 +87,28 @@ func setupWizard() error {
 		cfg.APIKey = "" // force re-enter
 	}
 
+	cfg.Provider = ask(reader, "Provider [openai|anthropic]", cfg.Provider)
+	switch cfg.Provider {
+	case "anthropic":
+		if cfg.BaseURL == config.DefaultOpenAIBaseURL || cfg.BaseURL == "" {
+			cfg.BaseURL = config.DefaultAnthropicBaseURL
+		}
+		if cfg.Model == config.DefaultOpenAIModel || cfg.Model == "" {
+			cfg.Model = config.DefaultAnthropicModel
+		}
+	case "openai", "":
+		cfg.Provider = "openai"
+		if cfg.BaseURL == "" {
+			cfg.BaseURL = config.DefaultOpenAIBaseURL
+		}
+		if cfg.Model == "" {
+			cfg.Model = config.DefaultOpenAIModel
+		}
+	default:
+		return xerrors.User("bad_provider",
+			fmt.Sprintf("unknown provider %q", cfg.Provider),
+			"supported: openai, anthropic")
+	}
 	cfg.BaseURL = ask(reader, "Base URL", cfg.BaseURL)
 	cfg.Model = ask(reader, "Model", cfg.Model)
 
@@ -139,9 +159,11 @@ func buildProvider(cfg config.Config) (provider.Provider, error) {
 	switch cfg.Provider {
 	case "openai", "":
 		return provider.NewOpenAI(cfg), nil
+	case "anthropic":
+		return provider.NewAnthropic(cfg), nil
 	}
 	return nil, xerrors.User("unknown_provider",
-		fmt.Sprintf("provider %q is not supported in v0.1", cfg.Provider),
-		"v0.1 supports only OpenAI-compatible providers")
+		fmt.Sprintf("provider %q is not supported", cfg.Provider),
+		"supported: openai (default), anthropic")
 }
 

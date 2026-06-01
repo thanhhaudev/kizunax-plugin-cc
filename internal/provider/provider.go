@@ -5,6 +5,8 @@ import "context"
 type Provider interface {
 	Name() string
 	Chat(ctx context.Context, req ChatRequest) (ChatResponse, error)
+	// Probe sends a tiny request to verify connectivity + auth.
+	Probe(ctx context.Context) error
 }
 
 type Message struct {
