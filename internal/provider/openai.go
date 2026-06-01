@@ -60,6 +60,7 @@ type openaiResp struct {
 		PromptTokens     int `json:"prompt_tokens"`
 		CompletionTokens int `json:"completion_tokens"`
 		TotalTokens      int `json:"total_tokens"`
+		TokensConsumed   int `json:"tokens_consumed"` // MiniMax/KizunaX-specific (includes reasoning overhead)
 	} `json:"usage"`
 }
 
@@ -150,12 +151,23 @@ func (a *OpenAIAdapter) send(ctx context.Context, body openaiReq, isStructuredAt
 	}
 
 	choice := parsed.Choices[0]
+	total := parsed.Usage.TotalTokens
+	if total == 0 {
+		// Fallback for MiniMax/KizunaX which may omit total_tokens but
+		// send tokens_consumed (includes reasoning overhead). If neither
+		// field is present, derive from prompt+completion.
+		if parsed.Usage.TokensConsumed > 0 {
+			total = parsed.Usage.TokensConsumed
+		} else {
+			total = parsed.Usage.PromptTokens + parsed.Usage.CompletionTokens
+		}
+	}
 	return ChatResponse{
 		Content:      choice.Message.Content,
 		StopReason:   choice.FinishReason,
 		InputTokens:  parsed.Usage.PromptTokens,
 		OutputTokens: parsed.Usage.CompletionTokens,
-		TotalTokens:  parsed.Usage.TotalTokens,
+		TotalTokens:  total,
 		RawResponse:  raw,
 	}, nil
 }
