@@ -1,0 +1,77 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+
+permissions:
+  contents: write
+
+jobs:
+  verify-version:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify tag matches source version
+        run: |
+          TAG_VERSION="${GITHUB_REF_NAME#v}"
+          SRC_VERSION="$(grep -E '^const Version = "[^"]+"' internal/cli/cli.go | sed -E 's/.*"([^"]+)".*/\1/')"
+          echo "tag=$TAG_VERSION src=$SRC_VERSION"
+          if [ "$TAG_VERSION" != "$SRC_VERSION" ]; then
+            echo "ERROR: tag $TAG_VERSION does not match Version constant $SRC_VERSION"
+            exit 1
+          fi
+
+  build:
+    needs: verify-version
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - goos: darwin
+            goarch: arm64
+          - goos: darwin
+            goarch: amd64
+          - goos: linux
+            goarch: amd64
+          - goos: linux
+            goarch: arm64
+          - goos: windows
+            goarch: amd64
+            ext: .exe
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.21'
+      - name: Build binary
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+          CGO_ENABLED: '0'
+        run: |
+          NAME="kizunax-${{ matrix.goos }}-${{ matrix.goarch }}${{ matrix.ext }}"
+          go build -trimpath -ldflags="-s -w" -o "$NAME" ./cmd/kizunax
+          sha256sum "$NAME" > "$NAME.sha256"
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: kizunax-${{ matrix.goos }}-${{ matrix.goarch }}
+          path: |
+            kizunax-${{ matrix.goos }}-${{ matrix.goarch }}*
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - name: Publish release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*
+          generate_release_notes: true
+          fail_on_unmatched_files: true
