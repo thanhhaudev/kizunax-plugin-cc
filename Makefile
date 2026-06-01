@@ -11,7 +11,17 @@ clean:
 	@rm -f $(BINARY)
 
 test:
-	@go test ./...
+	@go test ./internal/...
+
+test-verbose:
+	@go test -v ./internal/...
+
+test-update-golden:
+	@go test ./internal/render -update
+
+cover:
+	@go test -coverprofile=coverage.out ./internal/...
+	@go tool cover -func=coverage.out | tail -20
 
 run-setup: build
 	@$(BINARY) setup --check
