@@ -3,6 +3,7 @@ package cli
 import (
 	"bufio"
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"strings"
@@ -15,6 +16,8 @@ import (
 func runSetup(args []string) error {
 	check := hasFlag(args, "--check")
 	rebuild := hasFlag(args, "--rebuild")
+	jsonOut := hasFlag(args, "--json")
+	save := hasFlag(args, "--save")
 	providerOverride := flagValue(args, "--provider")
 
 	if check {
@@ -23,6 +26,12 @@ func runSetup(args []string) error {
 	if rebuild {
 		fmt.Println("Use 'bash scripts/build.sh' (or 'make build') to rebuild the binary.")
 		return nil
+	}
+	if jsonOut {
+		return setupJSON()
+	}
+	if save {
+		return setupSave(args)
 	}
 
 	return setupWizard()
@@ -284,4 +293,128 @@ func buildProvider(cfg config.Config) (provider.Provider, error) {
 	return nil, xerrors.User("unknown_provider",
 		fmt.Sprintf("provider %q is not supported", cfg.Provider),
 		"supported: openai, anthropic")
+}
+
+// setupJSON prints the current config inventory as JSON. No prompts.
+// has_api_key is the only field that exposes secret state — the key itself is never printed.
+func setupJSON() error {
+	path, _ := config.Path()
+
+	type providerSummary struct {
+		BaseURL   string `json:"base_url"`
+		Model     string `json:"model"`
+		HasAPIKey bool   `json:"has_api_key"`
+	}
+	out := struct {
+		ConfigPath      string                     `json:"config_path"`
+		DefaultProvider string                     `json:"default_provider"`
+		Providers       map[string]providerSummary `json:"providers"`
+	}{
+		ConfigPath: path,
+		Providers:  map[string]providerSummary{},
+	}
+
+	file, err := config.LoadFile()
+	if err == nil {
+		file = config.MigrateLegacy(file)
+		out.DefaultProvider = file.DefaultProvider
+		if file.OpenAI != nil {
+			out.Providers["openai"] = providerSummary{
+				BaseURL:   file.OpenAI.BaseURL,
+				Model:     file.OpenAI.Model,
+				HasAPIKey: file.OpenAI.APIKey != "",
+			}
+		}
+		if file.Anthropic != nil {
+			out.Providers["anthropic"] = providerSummary{
+				BaseURL:   file.Anthropic.BaseURL,
+				Model:     file.Anthropic.Model,
+				HasAPIKey: file.Anthropic.APIKey != "",
+			}
+		}
+	}
+
+	enc := json.NewEncoder(os.Stdout)
+	enc.SetIndent("", "  ")
+	return enc.Encode(out)
+}
+
+// setupSave writes a provider entry into config.json without prompting.
+// Required flags: --provider, --base-url, --model, --api-key
+// Optional: --set-default, --reuse-api-key
+func setupSave(args []string) error {
+	provider := flagValue(args, "--provider")
+	baseURL := flagValue(args, "--base-url")
+	model := flagValue(args, "--model")
+	apiKey := flagValue(args, "--api-key")
+	setDefault := hasFlag(args, "--set-default")
+	reuseKey := hasFlag(args, "--reuse-api-key")
+
+	if provider != "openai" && provider != "anthropic" {
+		return xerrors.User("bad_provider",
+			fmt.Sprintf("--provider must be 'openai' or 'anthropic', got %q", provider),
+			"")
+	}
+	if baseURL == "" {
+		return xerrors.User("missing_flag", "--base-url is required", "")
+	}
+	if model == "" {
+		return xerrors.User("missing_flag", "--model is required", "")
+	}
+	if apiKey == "" && !reuseKey {
+		return xerrors.User("missing_flag",
+			"--api-key is required (or pass --reuse-api-key to keep the existing one)", "")
+	}
+
+	file, _ := config.LoadFile()
+	file = config.MigrateLegacy(file)
+
+	if reuseKey {
+		existing := lookupExistingKey(file, provider)
+		if existing == "" {
+			return xerrors.User("no_existing_key",
+				fmt.Sprintf("--reuse-api-key set but no existing key for provider %q", provider),
+				"run again without --reuse-api-key and pass --api-key")
+		}
+		apiKey = existing
+	}
+
+	entry := &config.ProviderEntry{
+		BaseURL: baseURL,
+		Model:   model,
+		APIKey:  apiKey,
+	}
+	switch provider {
+	case "openai":
+		file.OpenAI = entry
+	case "anthropic":
+		file.Anthropic = entry
+	}
+
+	if setDefault || file.DefaultProvider == "" {
+		file.DefaultProvider = provider
+	}
+
+	if err := config.Save(file); err != nil {
+		return xerrors.Internal("save_config", "cannot save config", err)
+	}
+
+	path, _ := config.Path()
+	fmt.Printf("Saved %s to %s (default=%s)\n", provider, path, file.DefaultProvider)
+	return nil
+}
+
+// lookupExistingKey returns the on-disk API key for provider, or "" if none.
+func lookupExistingKey(file config.File, provider string) string {
+	switch provider {
+	case "openai":
+		if file.OpenAI != nil {
+			return file.OpenAI.APIKey
+		}
+	case "anthropic":
+		if file.Anthropic != nil {
+			return file.Anthropic.APIKey
+		}
+	}
+	return ""
 }
