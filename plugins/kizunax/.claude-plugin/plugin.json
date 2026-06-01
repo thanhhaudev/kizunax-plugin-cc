@@ -1,0 +1,8 @@
+{
+  "name": "kizunax",
+  "version": "0.1.0",
+  "description": "AI code review for Claude Code via KizunaX or any OpenAI-compatible provider.",
+  "author": {
+    "name": "thanhhaudev"
+  }
+}
