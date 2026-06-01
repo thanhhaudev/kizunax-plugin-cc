@@ -29,6 +29,7 @@ func runReviewWithMode(args []string, mode prompt.Mode) error {
 	verbose := hasFlag(args, "--verbose")
 	background := hasFlag(args, "--background")
 	focus := flagValue(args, "--focus")
+	providerOverride := flagValue(args, "--provider")
 
 	target, err := parseTarget(args)
 	if err != nil {
@@ -45,10 +46,10 @@ func runReviewWithMode(args []string, mode prompt.Mode) error {
 	}
 
 	if background {
-		return spawnBackgroundJob(cwd, mode, target, focus)
+		return spawnBackgroundJob(cwd, mode, target, focus, providerOverride)
 	}
 
-	cfg, err := config.Load()
+	cfg, err := config.Load(providerOverride)
 	if err != nil {
 		return err
 	}
@@ -105,10 +106,16 @@ func runReviewWithMode(args []string, mode prompt.Mode) error {
 	return nil
 }
 
-func spawnBackgroundJob(cwd string, mode prompt.Mode, target git.Target, focus string) error {
+func spawnBackgroundJob(cwd string, mode prompt.Mode, target git.Target, focus, providerOverride string) error {
 	ws, err := state.Resolve(cwd)
 	if err != nil {
 		return xerrors.Internal("state_resolve", "cannot resolve workspace state dir", err)
+	}
+
+	// Resolve provider name now so the worker uses the same one even if env changes.
+	cfg, err := config.Load(providerOverride)
+	if err != nil {
+		return err
 	}
 
 	kind := job.KindReview
@@ -117,9 +124,10 @@ func spawnBackgroundJob(cwd string, mode prompt.Mode, target git.Target, focus s
 	}
 
 	req := job.Request{
-		Mode:   mode.String(),
-		Target: target,
-		Focus:  focus,
+		Mode:     mode.String(),
+		Target:   target,
+		Focus:    focus,
+		Provider: cfg.Provider,
 	}
 
 	j, err := job.SpawnBackground(cwd, ws, kind, req)
@@ -127,7 +135,7 @@ func spawnBackgroundJob(cwd string, mode prompt.Mode, target git.Target, focus s
 		return err
 	}
 
-	fmt.Printf("Job %s started (kind=%s target=%s).\n", j.ID, j.Kind, target.Label())
+	fmt.Printf("Job %s started (kind=%s provider=%s target=%s).\n", j.ID, j.Kind, cfg.Provider, target.Label())
 	fmt.Printf("Check progress: kizunax status %s\n", j.ID)
 	fmt.Printf("Read result:    kizunax result %s\n", j.ID)
 	return nil

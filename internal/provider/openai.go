@@ -204,13 +204,15 @@ func mapHTTPError(status int, raw []byte) error {
 }
 
 // Probe is a tiny health check used by /setup --check.
+// MaxTokens is generous because reasoning models (e.g., MiniMax) emit
+// hidden reasoning tokens before producing visible content.
 func (a *OpenAIAdapter) Probe(ctx context.Context) error {
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 	_, err := a.Chat(ctx, ChatRequest{
 		Model:     a.model,
-		Messages:  []Message{{Role: "user", Content: "respond with OK"}},
-		MaxTokens: 10,
+		Messages:  []Message{{Role: "user", Content: "Reply with the word OK and nothing else."}},
+		MaxTokens: 256,
 	})
 	return err
 }

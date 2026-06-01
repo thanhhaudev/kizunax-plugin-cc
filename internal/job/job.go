@@ -32,9 +32,10 @@ const (
 
 // Request captures everything needed to reproduce a review run.
 type Request struct {
-	Mode   string     `json:"mode"`
-	Target git.Target `json:"target"`
-	Focus  string     `json:"focus,omitempty"`
+	Mode     string     `json:"mode"`
+	Target   git.Target `json:"target"`
+	Focus    string     `json:"focus,omitempty"`
+	Provider string     `json:"provider,omitempty"` // resolved provider name (openai|anthropic)
 }
 
 type TokenUsage struct {

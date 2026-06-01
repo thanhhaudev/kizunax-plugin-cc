@@ -63,7 +63,7 @@ func runInternalExecuteJob(args []string) error {
 }
 
 func executeJobBody(cwd string, ws state.WorkspaceDir, j *job.Job) error {
-	cfg, err := config.Load()
+	cfg, err := config.Load(j.Request.Provider)
 	if err != nil {
 		return err
 	}
