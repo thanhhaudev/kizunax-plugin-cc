@@ -10,13 +10,27 @@ import (
 	"github.com/thanhhaudev/kizunax-plugin-cc/internal/diff"
 	xerrors "github.com/thanhhaudev/kizunax-plugin-cc/internal/errors"
 	"github.com/thanhhaudev/kizunax-plugin-cc/internal/git"
+	"github.com/thanhhaudev/kizunax-plugin-cc/internal/prompt"
 	"github.com/thanhhaudev/kizunax-plugin-cc/internal/render"
 	"github.com/thanhhaudev/kizunax-plugin-cc/internal/runner"
 )
 
 func runReview(args []string) error {
+	return runReviewWithMode(args, prompt.ModeStandard)
+}
+
+func runAdversarialReview(args []string) error {
+	return runReviewWithMode(args, prompt.ModeAdversarial)
+}
+
+func runReviewWithMode(args []string, mode prompt.Mode) error {
 	verbose := hasFlag(args, "--verbose")
-	_ = hasFlag(args, "--working-tree") // accepted; only target in v0.1
+	focus := flagValue(args, "--focus")
+
+	target, err := parseTarget(args)
+	if err != nil {
+		return err
+	}
 
 	cwd, err := os.Getwd()
 	if err != nil {
@@ -33,15 +47,17 @@ func runReview(args []string) error {
 	}
 
 	if verbose {
-		fmt.Fprintf(os.Stderr, "[verbose] provider=%s model=%s base_url=%s\n", cfg.Provider, cfg.Model, cfg.BaseURL)
+		fmt.Fprintf(os.Stderr, "[verbose] mode=%s provider=%s model=%s base_url=%s\n",
+			mode, cfg.Provider, cfg.Model, cfg.BaseURL)
+		fmt.Fprintf(os.Stderr, "[verbose] target=%s\n", target.Label())
 	}
 
-	bundle, err := diff.CollectWorkingTree(cwd)
+	bundle, err := diff.Collect(cwd, target)
 	if err != nil {
 		return err
 	}
 	if bundle.IsEmpty() {
-		fmt.Println("No changes to review. Working tree is clean.")
+		fmt.Println("No changes to review for target:", target.Label())
 		return nil
 	}
 
@@ -61,7 +77,13 @@ func runReview(args []string) error {
 	}
 
 	ctx := context.Background()
-	result, err := runner.Run(ctx, pluginRoot, p, bundle, cfg.Model, cfg.Temperature, cfg.MaxTokens)
+	result, err := runner.Run(ctx, pluginRoot, p, bundle, runner.Options{
+		Mode:        mode,
+		Focus:       focus,
+		Model:       cfg.Model,
+		Temperature: cfg.Temperature,
+		MaxTokens:   cfg.MaxTokens,
+	})
 	if err != nil {
 		return err
 	}
@@ -71,9 +93,55 @@ func runReview(args []string) error {
 			result.InputTokens, result.OutputTokens, result.TotalTokens)
 	}
 
-	out := render.RenderReview(result.Review, bundle, result.TotalTokens)
+	out := render.RenderReview(result.Review, bundle, result.TotalTokens, mode)
 	fmt.Print(out)
 	return nil
+}
+
+// parseTarget reads flags --working-tree / --base / --commit / --from --to
+// and optional --paths. Defaults to TargetWorkingTree if no target flag.
+func parseTarget(args []string) (git.Target, error) {
+	t := git.Target{Paths: splitPaths(flagValue(args, "--paths"))}
+
+	base := flagValue(args, "--base")
+	commit := flagValue(args, "--commit")
+	from := flagValue(args, "--from")
+	to := flagValue(args, "--to")
+
+	chosen := 0
+	if hasFlag(args, "--working-tree") {
+		chosen++
+	}
+	if base != "" {
+		chosen++
+	}
+	if commit != "" {
+		chosen++
+	}
+	if from != "" || to != "" {
+		chosen++
+	}
+	if chosen > 1 {
+		return t, xerrors.User("conflict_target",
+			"only one of --working-tree / --base / --commit / --from+--to may be set",
+			"")
+	}
+
+	switch {
+	case base != "":
+		t.Kind = git.TargetBranchDiff
+		t.Base = base
+	case commit != "":
+		t.Kind = git.TargetCommit
+		t.Commit = commit
+	case from != "" || to != "":
+		t.Kind = git.TargetCommitRange
+		t.FromSHA = from
+		t.ToSHA = to
+	default:
+		t.Kind = git.TargetWorkingTree
+	}
+	return t, nil
 }
 
 // resolvePluginRoot finds plugins/kizunax/ relative to the binary or env.

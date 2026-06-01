@@ -18,13 +18,21 @@ type Result struct {
 	TotalTokens  int
 }
 
-func Run(ctx context.Context, pluginRoot string, p provider.Provider, bundle diff.Bundle, model string, temperature float64, maxTokens int) (Result, error) {
+type Options struct {
+	Mode        prompt.Mode
+	Focus       string
+	Model       string
+	Temperature float64
+	MaxTokens   int
+}
+
+func Run(ctx context.Context, pluginRoot string, p provider.Provider, bundle diff.Bundle, opts Options) (Result, error) {
 	schemaJSON, err := schema.LoadSchemaJSON(pluginRoot)
 	if err != nil {
 		return Result{}, xerrors.Internal("load_schema", "cannot load review schema", err)
 	}
 
-	pr, err := prompt.Build(pluginRoot, bundle, schemaJSON)
+	pr, err := prompt.Build(pluginRoot, opts.Mode, bundle, schemaJSON, opts.Focus)
 	if err != nil {
 		return Result{}, err
 	}
@@ -32,9 +40,9 @@ func Run(ctx context.Context, pluginRoot string, p provider.Provider, bundle dif
 	req := provider.ChatRequest{
 		System:        pr.System,
 		Messages:      []provider.Message{{Role: "user", Content: pr.User}},
-		Model:         model,
-		Temperature:   temperature,
-		MaxTokens:     maxTokens,
+		Model:         opts.Model,
+		Temperature:   opts.Temperature,
+		MaxTokens:     opts.MaxTokens,
 		JSONSchema:    schemaJSON,
 		TryJSONSchema: true,
 	}
@@ -46,7 +54,6 @@ func Run(ctx context.Context, pluginRoot string, p provider.Provider, bundle dif
 
 	review, parseErr := schema.Parse(resp.Content)
 	if parseErr != nil {
-		// Retry once with explicit JSON instruction.
 		req.Messages = append(req.Messages,
 			provider.Message{Role: "assistant", Content: resp.Content},
 			provider.Message{Role: "user", Content: fmt.Sprintf(

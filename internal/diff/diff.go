@@ -30,47 +30,21 @@ func (b Bundle) IsEmpty() bool {
 	return strings.TrimSpace(b.Diff) == "" && len(b.Untracked) == 0
 }
 
-// CollectWorkingTree gathers a working-tree diff plus untracked text files,
-// capping total payload size by dropping the largest contributors past the
-// cap. v0.1 only supports working-tree target.
-func CollectWorkingTree(cwd string) (Bundle, error) {
-	bundle := Bundle{TargetLabel: "working tree"}
+// Collect dispatches based on target kind. For working-tree, also pulls in
+// text-like untracked files (size <= 64KB each) so they get reviewed.
+// For other targets, untracked is irrelevant.
+func Collect(cwd string, target git.Target) (Bundle, error) {
+	bundle := Bundle{TargetLabel: target.Label()}
 
-	diffStr, err := git.WorkingTreeDiff(cwd)
+	diffStr, err := git.Diff(cwd, target)
 	if err != nil {
-		return bundle, xerrors.Diff("collect_diff", fmt.Sprintf("git diff failed: %v", err), "")
+		return bundle, xerrors.Diff("collect_diff", fmt.Sprintf("collect diff: %v", err), "")
 	}
 	bundle.Diff = diffStr
 	bundle.TotalBytes = len(diffStr)
 
-	untrackedPaths, err := git.UntrackedFiles(cwd)
-	if err == nil {
-		root, _ := git.RootOf(cwd)
-		for _, rel := range untrackedPaths {
-			abs := filepath.Join(root, rel)
-			info, statErr := os.Stat(abs)
-			if statErr != nil || info.IsDir() {
-				continue
-			}
-			if info.Size() > 64*1024 {
-				bundle.Warnings = append(bundle.Warnings, fmt.Sprintf("skipped untracked file >64KB: %s", rel))
-				continue
-			}
-			data, readErr := os.ReadFile(abs)
-			if readErr != nil {
-				continue
-			}
-			if !isTextLike(data) {
-				bundle.Warnings = append(bundle.Warnings, fmt.Sprintf("skipped binary untracked file: %s", rel))
-				continue
-			}
-			bundle.Untracked = append(bundle.Untracked, UntrackedFile{
-				Path:    rel,
-				Content: string(data),
-				Bytes:   len(data),
-			})
-			bundle.TotalBytes += len(data)
-		}
+	if target.Kind == git.TargetWorkingTree {
+		bundle = appendUntracked(cwd, bundle, target.Paths)
 	}
 
 	if bundle.TotalBytes > config.MaxDiffBytes {
@@ -78,6 +52,69 @@ func CollectWorkingTree(cwd string) (Bundle, error) {
 	}
 
 	return bundle, nil
+}
+
+func appendUntracked(cwd string, b Bundle, pathFilter []string) Bundle {
+	untrackedPaths, err := git.UntrackedFiles(cwd)
+	if err != nil {
+		return b
+	}
+
+	root, _ := git.RootOf(cwd)
+	pathSet := pathFilterSet(pathFilter)
+
+	for _, rel := range untrackedPaths {
+		if !matchesPathFilter(rel, pathSet) {
+			continue
+		}
+		abs := filepath.Join(root, rel)
+		info, statErr := os.Stat(abs)
+		if statErr != nil || info.IsDir() {
+			continue
+		}
+		if info.Size() > 64*1024 {
+			b.Warnings = append(b.Warnings, fmt.Sprintf("skipped untracked file >64KB: %s", rel))
+			continue
+		}
+		data, readErr := os.ReadFile(abs)
+		if readErr != nil {
+			continue
+		}
+		if !isTextLike(data) {
+			b.Warnings = append(b.Warnings, fmt.Sprintf("skipped binary untracked file: %s", rel))
+			continue
+		}
+		b.Untracked = append(b.Untracked, UntrackedFile{
+			Path:    rel,
+			Content: string(data),
+			Bytes:   len(data),
+		})
+		b.TotalBytes += len(data)
+	}
+	return b
+}
+
+func pathFilterSet(paths []string) map[string]bool {
+	if len(paths) == 0 {
+		return nil
+	}
+	out := make(map[string]bool, len(paths))
+	for _, p := range paths {
+		out[strings.TrimRight(p, "/")] = true
+	}
+	return out
+}
+
+func matchesPathFilter(path string, set map[string]bool) bool {
+	if set == nil {
+		return true
+	}
+	for prefix := range set {
+		if path == prefix || strings.HasPrefix(path, prefix+"/") {
+			return true
+		}
+	}
+	return false
 }
 
 func applyCap(b Bundle) Bundle {
@@ -119,8 +156,7 @@ func isTextLike(data []byte) bool {
 		limit = 512
 	}
 	for i := 0; i < limit; i++ {
-		b := data[i]
-		if b == 0 {
+		if data[i] == 0 {
 			return false
 		}
 	}
@@ -130,7 +166,7 @@ func isTextLike(data []byte) bool {
 func RenderForPrompt(b Bundle) string {
 	var sb strings.Builder
 	if strings.TrimSpace(b.Diff) != "" {
-		sb.WriteString("### git diff (working tree)\n\n```diff\n")
+		sb.WriteString("### diff\n\n```diff\n")
 		sb.WriteString(b.Diff)
 		sb.WriteString("\n```\n\n")
 	}

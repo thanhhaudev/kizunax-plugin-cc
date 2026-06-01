@@ -6,7 +6,7 @@ import (
 	xerrors "github.com/thanhhaudev/kizunax-plugin-cc/internal/errors"
 )
 
-const Version = "0.1.0"
+const Version = "0.2.0"
 
 func Dispatch(args []string) error {
 	if len(args) == 0 {
@@ -17,6 +17,8 @@ func Dispatch(args []string) error {
 	switch args[0] {
 	case "review":
 		return runReview(args[1:])
+	case "adversarial-review":
+		return runAdversarialReview(args[1:])
 	case "setup":
 		return runSetup(args[1:])
 	case "version", "--version", "-v":
@@ -40,14 +42,29 @@ func printUsage() {
 	fmt.Printf(`kizunax %s — AI code review for Claude Code
 
 Usage:
-  kizunax review --working-tree [--verbose]
-  kizunax setup [--check | --rebuild]
+  kizunax review              [target-flags] [--focus TEXT] [--verbose]
+  kizunax adversarial-review  [target-flags] [--focus TEXT] [--verbose]
+  kizunax setup               [--check | --rebuild]
   kizunax version
 
+Target flags (pick at most one; default --working-tree):
+  --working-tree              Review uncommitted changes (default)
+  --base <ref>                Review branch diff vs <ref>, e.g. --base main
+  --commit <sha>              Review a single commit
+  --from <sha> --to <sha>     Review a commit range (sha..sha)
+
+Filter (combinable with any target):
+  --paths a.go,subdir/        Comma-separated path filter
+
+Other:
+  --focus "text"              Optional focus hint (e.g., "auth flow")
+  --verbose                   Print timing + token usage to stderr
+
 Commands:
-  review    Review code changes via configured AI provider
-  setup     Initialize config (provider, model, API key)
-  version   Show version
+  review               Standard review (correctness + maintainability + security)
+  adversarial-review   Skeptic stance focusing on attack surface and failure modes
+  setup                Initialize config (provider, model, API key)
+  version              Show version
 
 `, Version)
 }

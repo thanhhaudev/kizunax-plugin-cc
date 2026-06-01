@@ -6,17 +6,25 @@ import (
 	"strings"
 
 	"github.com/thanhhaudev/kizunax-plugin-cc/internal/diff"
+	"github.com/thanhhaudev/kizunax-plugin-cc/internal/prompt"
 	"github.com/thanhhaudev/kizunax-plugin-cc/internal/schema"
 )
 
-func RenderReview(r schema.ReviewResult, bundle diff.Bundle, totalTokens int) string {
+func RenderReview(r schema.ReviewResult, bundle diff.Bundle, totalTokens int, mode prompt.Mode) string {
 	var sb strings.Builder
 
-	if r.Verdict == "approve" {
-		sb.WriteString("## ✓ Review verdict: approve\n\n")
-	} else {
-		sb.WriteString("## ⚠ Review verdict: needs-attention\n\n")
+	header := "Review"
+	if mode == prompt.ModeAdversarial {
+		header = "Adversarial review"
 	}
+
+	if r.Verdict == "approve" {
+		sb.WriteString(fmt.Sprintf("## ✓ %s verdict: approve\n\n", header))
+	} else {
+		sb.WriteString(fmt.Sprintf("## ⚠ %s verdict: needs-attention\n\n", header))
+	}
+
+	sb.WriteString(fmt.Sprintf("_Target: %s_\n\n", bundle.TargetLabel))
 
 	if r.Summary != "" {
 		sb.WriteString(r.Summary)

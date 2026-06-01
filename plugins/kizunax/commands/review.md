@@ -1,11 +1,11 @@
 ---
-description: Review uncommitted changes (working-tree) using Kizunax
-argument-hint: '[--verbose]'
+description: Review code changes via Kizunax (working tree, branch diff, commit, or paths)
+argument-hint: '[--working-tree | --base <ref> | --commit <sha> | --from <sha> --to <sha>] [--paths a,b/] [--focus TEXT] [--verbose]'
 disable-model-invocation: true
 allowed-tools: Bash(go:*), Bash(/Users/*), Bash(git:*), Read
 ---
 
-Run a Kizunax review on the current working tree.
+Run a Kizunax standard code review.
 
 Steps:
 
@@ -13,11 +13,19 @@ Steps:
 
 2. Run:
    ```bash
-   ${CLAUDE_PLUGIN_ROOT}/bin/kizunax review --working-tree $ARGUMENTS
+   ${CLAUDE_PLUGIN_ROOT}/bin/kizunax review $ARGUMENTS
    ```
 
 3. Return the command stdout verbatim. Do not paraphrase, summarize, or add commentary.
 
 4. Do not fix any issues mentioned in the review output. The plugin is read-only.
 
-v0.1 limitation: only working-tree review is supported. Branch diff / commit range / paths will land in later versions.
+Target flags (pick at most one; default `--working-tree`):
+- `--working-tree` — Review uncommitted changes (default)
+- `--base <ref>` — Review branch diff vs `<ref>`, e.g. `--base main`
+- `--commit <sha>` — Review a single commit
+- `--from <sha> --to <sha>` — Review a commit range
+
+Combinable with any target:
+- `--paths a.go,subdir/` — Comma-separated path filter
+- `--focus "text"` — Optional focus hint

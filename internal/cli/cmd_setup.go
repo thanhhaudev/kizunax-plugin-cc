@@ -89,8 +89,8 @@ func setupWizard() error {
 		cfg.APIKey = "" // force re-enter
 	}
 
-	cfg.BaseURL = prompt(reader, "Base URL", cfg.BaseURL)
-	cfg.Model = prompt(reader, "Model", cfg.Model)
+	cfg.BaseURL = ask(reader, "Base URL", cfg.BaseURL)
+	cfg.Model = ask(reader, "Model", cfg.Model)
 
 	fmt.Print("API key (input shown): ")
 	key, _ := reader.ReadString('\n')
@@ -111,7 +111,7 @@ func setupWizard() error {
 	return nil
 }
 
-func prompt(r *bufio.Reader, label, def string) string {
+func ask(r *bufio.Reader, label, def string) string {
 	fmt.Printf("%s [%s]: ", label, def)
 	line, _ := r.ReadString('\n')
 	line = strings.TrimSpace(line)
@@ -145,11 +145,3 @@ func buildProvider(cfg config.Config) (provider.Provider, error) {
 		"v0.1 supports only OpenAI-compatible providers")
 }
 
-func hasFlag(args []string, name string) bool {
-	for _, a := range args {
-		if a == name {
-			return true
-		}
-	}
-	return false
-}
