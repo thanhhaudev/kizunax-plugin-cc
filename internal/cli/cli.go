@@ -6,7 +6,7 @@ import (
 	xerrors "github.com/thanhhaudev/kizunax-plugin-cc/internal/errors"
 )
 
-const Version = "0.2.0"
+const Version = "0.3.0"
 
 func Dispatch(args []string) error {
 	if len(args) == 0 {
@@ -21,6 +21,14 @@ func Dispatch(args []string) error {
 		return runAdversarialReview(args[1:])
 	case "setup":
 		return runSetup(args[1:])
+	case "status":
+		return runStatus(args[1:])
+	case "result":
+		return runResult(args[1:])
+	case "cancel":
+		return runCancel(args[1:])
+	case "internal-execute-job":
+		return runInternalExecuteJob(args[1:])
 	case "version", "--version", "-v":
 		fmt.Printf("kizunax %s\n", Version)
 		return nil
@@ -42,29 +50,35 @@ func printUsage() {
 	fmt.Printf(`kizunax %s — AI code review for Claude Code
 
 Usage:
-  kizunax review              [target-flags] [--focus TEXT] [--verbose]
-  kizunax adversarial-review  [target-flags] [--focus TEXT] [--verbose]
+  kizunax review              [target-flags] [--focus TEXT] [--background] [--verbose]
+  kizunax adversarial-review  [target-flags] [--focus TEXT] [--background] [--verbose]
+  kizunax status              [<job-id>]
+  kizunax result              <job-id>
+  kizunax cancel              <job-id>
   kizunax setup               [--check | --rebuild]
   kizunax version
 
 Target flags (pick at most one; default --working-tree):
   --working-tree              Review uncommitted changes (default)
-  --base <ref>                Review branch diff vs <ref>, e.g. --base main
+  --base <ref>                Review branch diff vs <ref>
   --commit <sha>              Review a single commit
-  --from <sha> --to <sha>     Review a commit range (sha..sha)
+  --from <sha> --to <sha>     Review a commit range
 
-Filter (combinable with any target):
+Filter:
   --paths a.go,subdir/        Comma-separated path filter
 
-Other:
-  --focus "text"              Optional focus hint (e.g., "auth flow")
-  --verbose                   Print timing + token usage to stderr
+Execution:
+  --background                Spawn worker, return job ID immediately
+  --focus "text"              Optional prompt focus hint
+  --verbose                   Print timing + tokens to stderr
 
 Commands:
-  review               Standard review (correctness + maintainability + security)
+  review               Standard review
   adversarial-review   Skeptic stance focusing on attack surface and failure modes
+  status               List jobs in this workspace, or detail one
+  result               Render the result of a finished job
+  cancel               SIGTERM a running job's worker
   setup                Initialize config (provider, model, API key)
-  version              Show version
 
 `, Version)
 }

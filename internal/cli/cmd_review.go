@@ -10,9 +10,11 @@ import (
 	"github.com/thanhhaudev/kizunax-plugin-cc/internal/diff"
 	xerrors "github.com/thanhhaudev/kizunax-plugin-cc/internal/errors"
 	"github.com/thanhhaudev/kizunax-plugin-cc/internal/git"
+	"github.com/thanhhaudev/kizunax-plugin-cc/internal/job"
 	"github.com/thanhhaudev/kizunax-plugin-cc/internal/prompt"
 	"github.com/thanhhaudev/kizunax-plugin-cc/internal/render"
 	"github.com/thanhhaudev/kizunax-plugin-cc/internal/runner"
+	"github.com/thanhhaudev/kizunax-plugin-cc/internal/state"
 )
 
 func runReview(args []string) error {
@@ -25,6 +27,7 @@ func runAdversarialReview(args []string) error {
 
 func runReviewWithMode(args []string, mode prompt.Mode) error {
 	verbose := hasFlag(args, "--verbose")
+	background := hasFlag(args, "--background")
 	focus := flagValue(args, "--focus")
 
 	target, err := parseTarget(args)
@@ -39,6 +42,10 @@ func runReviewWithMode(args []string, mode prompt.Mode) error {
 
 	if err := git.EnsureRepo(cwd); err != nil {
 		return err
+	}
+
+	if background {
+		return spawnBackgroundJob(cwd, mode, target, focus)
 	}
 
 	cfg, err := config.Load()
@@ -98,6 +105,34 @@ func runReviewWithMode(args []string, mode prompt.Mode) error {
 	return nil
 }
 
+func spawnBackgroundJob(cwd string, mode prompt.Mode, target git.Target, focus string) error {
+	ws, err := state.Resolve(cwd)
+	if err != nil {
+		return xerrors.Internal("state_resolve", "cannot resolve workspace state dir", err)
+	}
+
+	kind := job.KindReview
+	if mode == prompt.ModeAdversarial {
+		kind = job.KindAdversarialReview
+	}
+
+	req := job.Request{
+		Mode:   mode.String(),
+		Target: target,
+		Focus:  focus,
+	}
+
+	j, err := job.SpawnBackground(cwd, ws, kind, req)
+	if err != nil {
+		return err
+	}
+
+	fmt.Printf("Job %s started (kind=%s target=%s).\n", j.ID, j.Kind, target.Label())
+	fmt.Printf("Check progress: kizunax status %s\n", j.ID)
+	fmt.Printf("Read result:    kizunax result %s\n", j.ID)
+	return nil
+}
+
 // parseTarget reads flags --working-tree / --base / --commit / --from --to
 // and optional --paths. Defaults to TargetWorkingTree if no target flag.
 func parseTarget(args []string) (git.Target, error) {
@@ -144,7 +179,6 @@ func parseTarget(args []string) (git.Target, error) {
 	return t, nil
 }
 
-// resolvePluginRoot finds plugins/kizunax/ relative to the binary or env.
 func resolvePluginRoot() (string, error) {
 	if root := os.Getenv("CLAUDE_PLUGIN_ROOT"); root != "" {
 		return root, nil

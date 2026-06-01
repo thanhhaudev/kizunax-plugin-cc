@@ -1,0 +1,108 @@
+package job
+
+import (
+	"crypto/rand"
+	"encoding/hex"
+	"encoding/json"
+	"fmt"
+	"os"
+	"sort"
+	"time"
+
+	"github.com/thanhhaudev/kizunax-plugin-cc/internal/git"
+	"github.com/thanhhaudev/kizunax-plugin-cc/internal/schema"
+	"github.com/thanhhaudev/kizunax-plugin-cc/internal/state"
+)
+
+type Kind string
+
+const (
+	KindReview            Kind = "review"
+	KindAdversarialReview Kind = "adversarial-review"
+)
+
+type Status string
+
+const (
+	StatusRunning   Status = "running"
+	StatusCompleted Status = "completed"
+	StatusFailed    Status = "failed"
+	StatusCancelled Status = "cancelled"
+)
+
+// Request captures everything needed to reproduce a review run.
+type Request struct {
+	Mode   string     `json:"mode"`
+	Target git.Target `json:"target"`
+	Focus  string     `json:"focus,omitempty"`
+}
+
+type TokenUsage struct {
+	Input  int `json:"input"`
+	Output int `json:"output"`
+	Total  int `json:"total"`
+}
+
+type Job struct {
+	ID          string                `json:"id"`
+	Kind        Kind                  `json:"kind"`
+	Status      Status                `json:"status"`
+	PID         int                   `json:"pid,omitempty"`
+	CreatedAt   time.Time             `json:"createdAt"`
+	StartedAt   time.Time             `json:"startedAt"`
+	CompletedAt *time.Time            `json:"completedAt,omitempty"`
+	Request     Request               `json:"request"`
+	Result      *schema.ReviewResult  `json:"result,omitempty"`
+	Error       string                `json:"error,omitempty"`
+	LogPath     string                `json:"logPath"`
+	Warnings    []string              `json:"warnings,omitempty"`
+	Tokens      *TokenUsage           `json:"tokens,omitempty"`
+}
+
+// NewID returns a sortable, time-prefixed unique ID:
+// "YYYYMMDDTHHmmss-XXXXXXXX" (8 hex chars random suffix).
+func NewID() string {
+	ts := time.Now().UTC().Format("20060102T150405")
+	var rnd [4]byte
+	_, _ = rand.Read(rnd[:])
+	return fmt.Sprintf("%s-%s", ts, hex.EncodeToString(rnd[:]))
+}
+
+// Save serializes a job record to {workspace}/jobs/{id}.json atomically.
+func Save(ws state.WorkspaceDir, j Job) error {
+	data, err := json.MarshalIndent(j, "", "  ")
+	if err != nil {
+		return err
+	}
+	return state.WriteAtomic(ws.JobPath(j.ID), data, 0o644)
+}
+
+func Load(ws state.WorkspaceDir, id string) (Job, error) {
+	var j Job
+	data, err := os.ReadFile(ws.JobPath(id))
+	if err != nil {
+		return j, err
+	}
+	if err := json.Unmarshal(data, &j); err != nil {
+		return j, err
+	}
+	return j, nil
+}
+
+// List returns jobs sorted newest first.
+func List(ws state.WorkspaceDir) ([]Job, error) {
+	ids, err := ws.ListJobIDs()
+	if err != nil {
+		return nil, err
+	}
+	jobs := make([]Job, 0, len(ids))
+	for _, id := range ids {
+		if j, err := Load(ws, id); err == nil {
+			jobs = append(jobs, j)
+		}
+	}
+	sort.SliceStable(jobs, func(i, j int) bool {
+		return jobs[i].CreatedAt.After(jobs[j].CreatedAt)
+	})
+	return jobs, nil
+}

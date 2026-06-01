@@ -22,10 +22,14 @@ type Error struct {
 }
 
 func (e *Error) Error() string {
-	if e.Hint != "" {
-		return fmt.Sprintf("%s\nHint: %s", e.Msg, e.Hint)
+	msg := e.Msg
+	if e.Cause != nil {
+		msg = fmt.Sprintf("%s: %v", msg, e.Cause)
 	}
-	return e.Msg
+	if e.Hint != "" {
+		return fmt.Sprintf("%s\nHint: %s", msg, e.Hint)
+	}
+	return msg
 }
 
 func (e *Error) Unwrap() error { return e.Cause }
@@ -44,6 +48,10 @@ func Diff(code, msg, hint string) *Error {
 
 func Internal(code, msg string, cause error) *Error {
 	return &Error{Kind: KindInternal, Code: code, Msg: msg, Cause: cause}
+}
+
+func Background(code, msg, hint string, cause error) *Error {
+	return &Error{Kind: KindBackground, Code: code, Msg: msg, Hint: hint, Cause: cause}
 }
 
 func ExitCode(err error) int {

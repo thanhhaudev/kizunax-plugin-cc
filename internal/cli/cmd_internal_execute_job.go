@@ -1,0 +1,120 @@
+package cli
+
+import (
+	"context"
+	"fmt"
+	"os"
+	"time"
+
+	"github.com/thanhhaudev/kizunax-plugin-cc/internal/config"
+	"github.com/thanhhaudev/kizunax-plugin-cc/internal/diff"
+	xerrors "github.com/thanhhaudev/kizunax-plugin-cc/internal/errors"
+	"github.com/thanhhaudev/kizunax-plugin-cc/internal/job"
+	"github.com/thanhhaudev/kizunax-plugin-cc/internal/prompt"
+	"github.com/thanhhaudev/kizunax-plugin-cc/internal/render"
+	"github.com/thanhhaudev/kizunax-plugin-cc/internal/runner"
+	"github.com/thanhhaudev/kizunax-plugin-cc/internal/state"
+)
+
+// runInternalExecuteJob is the worker entry point spawned by SpawnBackground.
+// It is NOT shown in --help and is not meant for user invocation.
+func runInternalExecuteJob(args []string) error {
+	if len(args) < 1 {
+		return xerrors.Internal("missing_id", "internal-execute-job requires <id>", nil)
+	}
+	id := args[0]
+
+	cwd, err := os.Getwd()
+	if err != nil {
+		return xerrors.Internal("getwd", "cannot read working directory", err)
+	}
+
+	ws, err := state.Resolve(cwd)
+	if err != nil {
+		return err
+	}
+
+	j, err := job.Load(ws, id)
+	if err != nil {
+		return xerrors.Internal("load_job", fmt.Sprintf("cannot load job %s", id), err)
+	}
+
+	fmt.Fprintf(os.Stdout, "[worker] %s starting kind=%s target=%s\n",
+		j.ID, j.Kind, j.Request.Target.Label())
+
+	if err := executeJobBody(cwd, ws, &j); err != nil {
+		j.Status = job.StatusFailed
+		j.Error = err.Error()
+		completed := time.Now().UTC()
+		j.CompletedAt = &completed
+		_ = job.Save(ws, j)
+		fmt.Fprintf(os.Stderr, "[worker] %s failed: %v\n", j.ID, err)
+		return err
+	}
+
+	j.Status = job.StatusCompleted
+	completed := time.Now().UTC()
+	j.CompletedAt = &completed
+	if err := job.Save(ws, j); err != nil {
+		fmt.Fprintf(os.Stderr, "[worker] cannot save final state: %v\n", err)
+	}
+	fmt.Fprintf(os.Stdout, "[worker] %s completed\n", j.ID)
+	return nil
+}
+
+func executeJobBody(cwd string, ws state.WorkspaceDir, j *job.Job) error {
+	cfg, err := config.Load()
+	if err != nil {
+		return err
+	}
+
+	bundle, err := diff.Collect(cwd, j.Request.Target)
+	if err != nil {
+		return err
+	}
+	if bundle.IsEmpty() {
+		return xerrors.Diff("empty_diff", "no changes to review for target", "")
+	}
+
+	pluginRoot, err := resolvePluginRoot()
+	if err != nil {
+		return err
+	}
+
+	p, err := buildProvider(cfg)
+	if err != nil {
+		return err
+	}
+
+	mode := prompt.ModeStandard
+	if j.Kind == job.KindAdversarialReview {
+		mode = prompt.ModeAdversarial
+	}
+
+	ctx := context.Background()
+	result, err := runner.Run(ctx, pluginRoot, p, bundle, runner.Options{
+		Mode:        mode,
+		Focus:       j.Request.Focus,
+		Model:       cfg.Model,
+		Temperature: cfg.Temperature,
+		MaxTokens:   cfg.MaxTokens,
+	})
+	if err != nil {
+		return err
+	}
+
+	j.Result = &result.Review
+	j.Warnings = bundle.Warnings
+	j.Tokens = &job.TokenUsage{
+		Input:  result.InputTokens,
+		Output: result.OutputTokens,
+		Total:  result.TotalTokens,
+	}
+
+	// Also append rendered markdown to the log file for convenience.
+	fmt.Fprintln(os.Stdout)
+	fmt.Fprintln(os.Stdout, "=== RENDERED REVIEW ===")
+	fmt.Fprint(os.Stdout, render.RenderReview(result.Review, bundle, result.TotalTokens, mode))
+
+	return nil
+}
