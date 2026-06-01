@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/thanhhaudev/kizunax-plugin-cc/internal/config"
@@ -18,6 +19,8 @@ func runSetup(args []string) error {
 	rebuild := hasFlag(args, "--rebuild")
 	jsonOut := hasFlag(args, "--json")
 	save := hasFlag(args, "--save")
+	apply := hasFlag(args, "--apply")
+	clearPending := hasFlag(args, "--clear-pending")
 	providerOverride := flagValue(args, "--provider")
 
 	if check {
@@ -32,6 +35,12 @@ func runSetup(args []string) error {
 	}
 	if save {
 		return setupSave(args)
+	}
+	if apply {
+		return setupApply(args)
+	}
+	if clearPending {
+		return setupClearPending()
 	}
 
 	return setupWizard()
@@ -417,4 +426,204 @@ func lookupExistingKey(file config.File, provider string) string {
 		}
 	}
 	return ""
+}
+
+// pendingProvider is one entry in the pending setup file.
+type pendingProvider struct {
+	Name    string `json:"name"`
+	BaseURL string `json:"base_url"`
+	Model   string `json:"model"`
+}
+
+// pendingFile is the on-disk shape of ~/.kizunax/.pending-setup.json.
+type pendingFile struct {
+	DefaultProvider string            `json:"default_provider"`
+	Providers       []pendingProvider `json:"providers"`
+}
+
+// pendingPath returns the absolute path to the pending setup file.
+func pendingPath() (string, error) {
+	configPath, err := config.Path()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(filepath.Dir(configPath), ".pending-setup.json"), nil
+}
+
+// loadPending reads and parses the pending file. Returns os.ErrNotExist if absent.
+func loadPending() (pendingFile, error) {
+	var pf pendingFile
+	path, err := pendingPath()
+	if err != nil {
+		return pf, err
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return pf, err
+	}
+	if err := json.Unmarshal(data, &pf); err != nil {
+		return pf, err
+	}
+	return pf, nil
+}
+
+// deletePending removes the pending file if present. Returns nil if already gone.
+func deletePending() error {
+	path, err := pendingPath()
+	if err != nil {
+		return err
+	}
+	err = os.Remove(path)
+	if err != nil && !os.IsNotExist(err) {
+		return err
+	}
+	return nil
+}
+
+// setupApply reads the pending setup file, resolves a key for each pending
+// provider from --key / --<provider>-key / --reuse, writes the final config,
+// and deletes the pending file when ALL pending providers were applied.
+func setupApply(args []string) error {
+	pf, err := loadPending()
+	if err != nil {
+		if os.IsNotExist(err) {
+			return xerrors.User("no_pending",
+				"no pending setup found",
+				"run /kizunax:setup first")
+		}
+		return xerrors.User("bad_pending", fmt.Sprintf("cannot read pending file: %v", err), "")
+	}
+	if len(pf.Providers) == 0 {
+		return xerrors.User("empty_pending", "pending file lists no providers", "delete it with --clear-pending and re-run /kizunax:setup")
+	}
+
+	sharedKey := flagValue(args, "--key")
+	openaiKey := flagValue(args, "--openai-key")
+	anthropicKey := flagValue(args, "--anthropic-key")
+	reuse := hasFlag(args, "--reuse")
+
+	if sharedKey == "" && openaiKey == "" && anthropicKey == "" && !reuse {
+		return xerrors.User("missing_flag",
+			"at least one of --key, --openai-key, --anthropic-key, or --reuse is required",
+			"")
+	}
+
+	file, _ := config.LoadFile()
+	file = config.MigrateLegacy(file)
+
+	var applied []string
+	var remaining []pendingProvider
+	for _, p := range pf.Providers {
+		key := ""
+		switch p.Name {
+		case "openai":
+			if openaiKey != "" {
+				key = openaiKey
+			}
+		case "anthropic":
+			if anthropicKey != "" {
+				key = anthropicKey
+			}
+		}
+		if key == "" && sharedKey != "" {
+			key = sharedKey
+		}
+		if key == "" && reuse {
+			key = lookupExistingKey(file, p.Name)
+			if key == "" {
+				remaining = append(remaining, p)
+				continue
+			}
+		}
+		if key == "" {
+			remaining = append(remaining, p)
+			continue
+		}
+
+		entry := &config.ProviderEntry{
+			BaseURL: p.BaseURL,
+			Model:   p.Model,
+			APIKey:  key,
+		}
+		switch p.Name {
+		case "openai":
+			file.OpenAI = entry
+		case "anthropic":
+			file.Anthropic = entry
+		default:
+			return xerrors.User("bad_provider",
+				fmt.Sprintf("pending file lists unknown provider %q", p.Name),
+				"")
+		}
+		applied = append(applied, p.Name)
+	}
+
+	if len(applied) == 0 {
+		return xerrors.User("no_key_resolved",
+			"no provider could be resolved with the given flags",
+			"pass --key, a --<provider>-key, or --reuse")
+	}
+
+	// Update default to whichever pending provider was first AND got applied.
+	for _, p := range pf.Providers {
+		if contains(applied, p.Name) {
+			if pf.DefaultProvider == p.Name || file.DefaultProvider == "" {
+				file.DefaultProvider = p.Name
+				break
+			}
+		}
+	}
+	if file.DefaultProvider == "" && pf.DefaultProvider != "" {
+		file.DefaultProvider = pf.DefaultProvider
+	}
+
+	if err := config.Save(file); err != nil {
+		return xerrors.Internal("save_config", "cannot save config", err)
+	}
+
+	if len(remaining) == 0 {
+		_ = deletePending()
+		path, _ := config.Path()
+		fmt.Printf("Applied %s to %s. Default provider: %s.\n",
+			strings.Join(applied, ", "), path, file.DefaultProvider)
+		return nil
+	}
+
+	// Some providers still need keys — keep pending file with only the unresolved ones.
+	pf.Providers = remaining
+	if pendingPathStr, err := pendingPath(); err == nil {
+		if data, mErr := json.MarshalIndent(pf, "", "  "); mErr == nil {
+			tmp := pendingPathStr + ".tmp"
+			if wErr := os.WriteFile(tmp, data, 0o600); wErr == nil {
+				_ = os.Rename(tmp, pendingPathStr)
+			}
+		}
+	}
+
+	var names []string
+	for _, p := range remaining {
+		names = append(names, p.Name)
+	}
+	fmt.Printf("Applied %s. Still pending: %s. Run --apply again with a key for those.\n",
+		strings.Join(applied, ", "), strings.Join(names, ", "))
+	return nil
+}
+
+// setupClearPending removes the pending setup file.
+func setupClearPending() error {
+	if err := deletePending(); err != nil {
+		return xerrors.Internal("clear_pending", "cannot remove pending file", err)
+	}
+	fmt.Println("Cleared pending setup.")
+	return nil
+}
+
+// contains is a small string-slice membership helper local to this file.
+func contains(haystack []string, needle string) bool {
+	for _, s := range haystack {
+		if s == needle {
+			return true
+		}
+	}
+	return false
 }
