@@ -29,13 +29,25 @@ Execution mode:
   - Only conclude "nothing to review" when the relevant scope is genuinely empty.
   - Recommend wait only when the review is clearly tiny (1-2 files, no broader directory-sized change).
   - Otherwise (including unclear size), recommend background.
+
+Provider routing (auto, with user override):
+- Decision based on estimated diff size + mode:
+  - `< 15KB` AND standard review → recommend `--provider openai` (fast, ~20s typical)
+  - `< 15KB` AND adversarial review → recommend `--provider anthropic` (heavier prompt; openai cliff lower for adversarial mode)
+  - `≥ 15KB` (any mode) → recommend `--provider anthropic` (stable above the openai cliff observed at ~20-25KB in threshold test 2026-06-02)
+- If the raw arguments already include `--provider openai` or `--provider anthropic`, do NOT ask — the user's explicit choice wins.
+- Otherwise, ask once via `AskUserQuestion` with the recommended option labeled `(Recommended)` first:
+  - Option 1 (recommended): the recommended provider with a one-line rationale
+  - Option 2: the other provider with a one-line counter-rationale
+- Pass the chosen provider as `--provider <chosen>` to the binary in either Foreground or Background flow.
+
 - Use `AskUserQuestion` exactly once with two options, recommended option first and suffixed `(Recommended)`:
   - `Wait for results`
   - `Run in background`
 
 Foreground flow:
 ```bash
-${CLAUDE_PLUGIN_ROOT}/bin/kizunax adversarial-review $ARGUMENTS
+${CLAUDE_PLUGIN_ROOT}/bin/kizunax adversarial-review --provider <chosen> $ARGUMENTS
 ```
 - Return the command stdout verbatim, exactly as-is.
 
@@ -43,7 +55,7 @@ Background flow:
 - Launch with `Bash` in the background:
 ```typescript
 Bash({
-  command: `${CLAUDE_PLUGIN_ROOT}/bin/kizunax adversarial-review $ARGUMENTS`,
+  command: `${CLAUDE_PLUGIN_ROOT}/bin/kizunax adversarial-review --provider <chosen> $ARGUMENTS`,
   description: "Kizunax adversarial review",
   run_in_background: true
 })
@@ -55,6 +67,8 @@ Argument handling:
 - Preserve the user's arguments exactly, including any trailing free-form focus text.
 - Do not strip `--wait`, `--background`, `--quiet`, or `--verbose` yourself.
 - The binary parses `--background` as a synonym of foreground (no internal detach). Claude Code's `Bash(..., run_in_background:true)` is what actually detaches.
+- If `--provider <name>` is already in the raw arguments, pass `$ARGUMENTS` unchanged.
+- Otherwise, prepend `--provider <chosen-from-routing>` so the binary uses the routed provider.
 
 Target flags (pick at most one; default `--working-tree`):
 - `--working-tree` — Review uncommitted changes
