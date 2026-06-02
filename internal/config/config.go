@@ -263,6 +263,11 @@ func MigrateLegacy(f File) File {
 	return f
 }
 
+// noticeOnce ensures the v0.10 openai-fallback stderr notice prints at most
+// once per process, so a binary used repeatedly in the same shell session
+// (e.g. multiple foreground reviews) doesn't spam.
+var noticeOnce atomic.Bool
+
 func resolveProviderName(override string, file File) string {
 	if override != "" {
 		return override
@@ -273,7 +278,55 @@ func resolveProviderName(override string, file File) string {
 	if file.DefaultProvider == "openai" || file.DefaultProvider == "anthropic" {
 		return file.DefaultProvider
 	}
+
+	// v0.10 fallback: prefer anthropic unless the workspace looks
+	// openai-only (upgrading v0.9 user whose wizard never wrote
+	// default_provider). Without this, those users silently flip to
+	// anthropic and every review fails with "no API key for provider
+	// anthropic".
+	if isOpenAIOnlyWorkspace(file) {
+		if noticeOnce.CompareAndSwap(false, true) {
+			fmt.Fprintln(os.Stderr, "[kizunax] v0.10+ default is anthropic but this workspace only has openai keys; staying on openai. Run /kizunax:setup to configure anthropic or set default_provider explicitly to silence this notice.")
+		}
+		return "openai"
+	}
 	return "anthropic"
+}
+
+// isOpenAIOnlyWorkspace returns true when the on-disk config shows a usable
+// openai configuration with no parallel anthropic configuration. Handles all
+// three on-disk shapes (legacy flat v0.5, legacy multi-provider v0.6.5,
+// post-migrate v0.6.6+).
+func isOpenAIOnlyWorkspace(file File) bool {
+	hasOpenAI := false
+	hasAnthropic := false
+
+	// Legacy v0.6.5 multi-provider slots.
+	if file.OpenAI != nil && file.OpenAI.APIKey != "" {
+		hasOpenAI = true
+	}
+	if file.Anthropic != nil && file.Anthropic.APIKey != "" {
+		hasAnthropic = true
+	}
+
+	// Legacy v0.5 flat format.
+	if file.Provider == "openai" && file.APIKey != "" {
+		hasOpenAI = true
+	}
+	if file.Provider == "anthropic" && file.APIKey != "" {
+		hasAnthropic = true
+	}
+
+	// Post-migrate v0.6.6+: the pool is a single APIKeys array, but the
+	// retained *Model fields disclose which provider was configured.
+	if file.OpenAIModel != "" && len(file.APIKeys) > 0 {
+		hasOpenAI = true
+	}
+	if file.AnthropicModel != "" && len(file.APIKeys) > 0 {
+		hasAnthropic = true
+	}
+
+	return hasOpenAI && !hasAnthropic
 }
 
 // modelInputBudget is the per-model context-window minus a generous output
