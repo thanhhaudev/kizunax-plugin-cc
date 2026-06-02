@@ -149,3 +149,48 @@ func makeJobsDir(ws state.WorkspaceDir) error {
 func ensureDir(p string) error {
 	return mkdirAll(p)
 }
+
+func TestListBySession_FiltersMatching(t *testing.T) {
+	ws := tempWorkspace(t)
+	mk := func(id, sess string) {
+		j := Job{ID: id, SessionID: sess, Kind: KindReview, Status: StatusCompleted, CreatedAt: time.Now()}
+		if err := Save(ws, j); err != nil {
+			t.Fatal(err)
+		}
+	}
+	mk("A", "sess-1")
+	mk("B", "sess-2")
+	mk("C", "sess-1")
+	mk("D", "") // legacy job without session
+
+	got, err := ListBySession(ws, "sess-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 2 {
+		t.Fatalf("got %d jobs, want 2", len(got))
+	}
+	for _, j := range got {
+		if j.SessionID != "sess-1" {
+			t.Errorf("unexpected sessionID: %s", j.SessionID)
+		}
+	}
+}
+
+func TestListBySession_EmptySession_ReturnsAll(t *testing.T) {
+	ws := tempWorkspace(t)
+	if err := Save(ws, Job{ID: "A", Kind: KindReview, CreatedAt: time.Now()}); err != nil {
+		t.Fatal(err)
+	}
+	if err := Save(ws, Job{ID: "B", SessionID: "sess", Kind: KindReview, CreatedAt: time.Now()}); err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := ListBySession(ws, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 2 {
+		t.Errorf("got %d, want all 2 when session is empty", len(got))
+	}
+}

@@ -118,3 +118,22 @@ func List(ws state.WorkspaceDir) ([]Job, error) {
 	})
 	return jobs, nil
 }
+
+// ListBySession returns jobs whose SessionID equals session, sorted newest-first.
+// Empty session returns all jobs (equivalent to List).
+func ListBySession(ws state.WorkspaceDir, session string) ([]Job, error) {
+	all, err := List(ws)
+	if err != nil {
+		return nil, err
+	}
+	if session == "" {
+		return all, nil
+	}
+	out := make([]Job, 0, len(all))
+	for _, j := range all {
+		if j.SessionID == session {
+			out = append(out, j)
+		}
+	}
+	return out, nil
+}
