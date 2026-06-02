@@ -7,7 +7,7 @@ const setupFormHTML = `<!DOCTYPE html>
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Kizunax setup</title>
+  <title>KizunaX setup</title>
   <style>
     body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; max-width: 640px; margin: 2rem auto; padding: 0 1rem; color: #1f2328; }
     h1 { font-size: 1.4rem; margin-bottom: 0.25rem; }
@@ -28,7 +28,7 @@ const setupFormHTML = `<!DOCTYPE html>
   </style>
 </head>
 <body>
-  <h1>Configure Kizunax</h1>
+  <h1>Configure KizunaX</h1>
   <p class="lede">Paste one or more API keys. The plugin rotates through them on each request so quota is spread across keys.</p>
 
   {{if .Error}}<div class="err-banner">{{.Error}}</div>{{end}}
@@ -48,12 +48,12 @@ const setupFormHTML = `<!DOCTYPE html>
       <div class="model-note" id="model-note"></div>
 
       <label>OpenAI-compat model</label>
-      <select name="openai_model" id="openai_model">
+      <select name="openai_model" id="openai_model" disabled>
         <option value="{{.OpenAIModel}}" selected>{{.OpenAIModel}}</option>
       </select>
 
       <label>Anthropic-compat model</label>
-      <select name="anthropic_model" id="anthropic_model">
+      <select name="anthropic_model" id="anthropic_model" disabled>
         <option value="{{.AnthropicModel}}" selected>{{.AnthropicModel}}</option>
       </select>
     </fieldset>
@@ -127,12 +127,14 @@ const setupFormHTML = `<!DOCTYPE html>
           var notes = [];
           if (r1.ok) {
             fillSelect(openaiSelect, r1.body.models || r1.body.fallback || [prevOpenai], prevOpenai);
+            openaiSelect.disabled = false;
             if (r1.body.note) notes.push('openai: ' + r1.body.note);
           } else {
             notes.push('openai: ' + (r1.body && r1.body.error ? r1.body.error : 'failed'));
           }
           if (r2.ok) {
             fillSelect(anthropicSelect, r2.body.models || r2.body.fallback || [prevAnthropic], prevAnthropic);
+            anthropicSelect.disabled = false;
             if (r2.body.note) notes.push('anthropic: ' + r2.body.note);
           } else {
             notes.push('anthropic: ' + (r2.body && r2.body.error ? r2.body.error : 'failed'));
@@ -152,7 +154,7 @@ const setupSuccessHTML = `<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <title>Kizunax — saved</title>
+  <title>KizunaX — saved</title>
   <style>
     body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; max-width: 640px; margin: 4rem auto; padding: 0 1rem; color: #1f2328; text-align: center; }
     h1 { color: #1f883d; }
@@ -161,6 +163,6 @@ const setupSuccessHTML = `<!DOCTYPE html>
 </head>
 <body>
   <h1>Configuration saved</h1>
-  <p>You can close this tab. The Kizunax CLI is exiting now.</p>
+  <p>You can close this tab. The KizunaX CLI is exiting now.</p>
 </body>
 </html>`

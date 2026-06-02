@@ -289,19 +289,12 @@ func parseForm(values url.Values) (formData, string) {
 		return formData{Rotation: config.RotationRoundRobin},
 			fmt.Sprintf("rotation %q not supported in this release.", rotation)
 	}
-	openaiModel := strings.TrimSpace(values.Get("openai_model"))
-	if openaiModel == "" {
-		openaiModel = config.DefaultOpenAIModel
-	}
-	anthropicModel := strings.TrimSpace(values.Get("anthropic_model"))
-	if anthropicModel == "" {
-		anthropicModel = config.DefaultAnthropicModel
-	}
-
+	// Models may be absent (disabled <select> doesn't submit) — leave them empty
+	// and let writeConfigFromForm fall back to existing config → built-in default.
 	fd := formData{
 		Rotation:       rotation,
-		OpenAIModel:    openaiModel,
-		AnthropicModel: anthropicModel,
+		OpenAIModel:    strings.TrimSpace(values.Get("openai_model")),
+		AnthropicModel: strings.TrimSpace(values.Get("anthropic_model")),
 	}
 	return fd, ""
 }
@@ -336,11 +329,26 @@ func writeConfigFromForm(fd formData, values url.Values) error {
 		return errors.New("At least one API key is required.")
 	}
 
+	openaiModel := fd.OpenAIModel
+	if openaiModel == "" {
+		openaiModel = existing.OpenAIModel
+	}
+	if openaiModel == "" {
+		openaiModel = config.DefaultOpenAIModel
+	}
+	anthropicModel := fd.AnthropicModel
+	if anthropicModel == "" {
+		anthropicModel = existing.AnthropicModel
+	}
+	if anthropicModel == "" {
+		anthropicModel = config.DefaultAnthropicModel
+	}
+
 	out := config.File{
 		APIKeys:        keys,
 		Rotation:       fd.Rotation,
-		OpenAIModel:    fd.OpenAIModel,
-		AnthropicModel: fd.AnthropicModel,
+		OpenAIModel:    openaiModel,
+		AnthropicModel: anthropicModel,
 		Temperature:    existing.Temperature,
 		MaxTokens:      existing.MaxTokens,
 	}
