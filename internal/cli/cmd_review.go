@@ -14,6 +14,7 @@ import (
 	"github.com/thanhhaudev/kizunax-plugin-cc/internal/render"
 	"github.com/thanhhaudev/kizunax-plugin-cc/internal/runner"
 	"github.com/thanhhaudev/kizunax-plugin-cc/internal/state"
+	"github.com/thanhhaudev/kizunax-plugin-cc/internal/usage"
 )
 
 func runReview(args []string) error {
@@ -102,6 +103,13 @@ func runReviewWithMode(args []string, mode prompt.Mode) error {
 
 	out := render.RenderReview(result.Review, bundle, result.TotalTokens, mode)
 	fmt.Print(out)
+
+	if ws, wsErr := state.Resolve(cwd); wsErr == nil {
+		appendUsageFooter(os.Stdout, ws, cfg.APIKey)
+		if base, baseErr := usage.DeriveBase(cfg.BaseURL); baseErr == nil {
+			usage.RefreshAsync(base, cfg.APIKey, ws)
+		}
+	}
 	return nil
 }
 
