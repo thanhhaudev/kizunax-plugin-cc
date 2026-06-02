@@ -1,10 +1,13 @@
 //go:build !windows
 
-// LEGACY (v0.9+): this Setpgid-detach path is no longer invoked by the
-// review command. It remains in the codebase for any future long-running
-// task command. Review now runs synchronously inside Claude Code's
-// Bash(run_in_background:true) bash task, which handles task tracking
-// and Claude notification natively.
+// Package job mixes live and legacy paths. Status as of v0.9.0:
+//   - LEGACY: SpawnBackground + the internal-execute-job worker subcommand
+//     (no callers from review since v0.9 — async is delegated to Claude Code's
+//     Bash(run_in_background:true). Kept for any future task-delegation
+//     command. Safe to remove if no longer needed by end of v0.10.)
+//   - LIVE: Cancel, SweepOrphans. Both invoked by /kizunax:cancel and
+//     /kizunax:status respectively. Removing these would break v0.9 status
+//     UI for legacy v0.8 running jobs.
 
 package job
 
