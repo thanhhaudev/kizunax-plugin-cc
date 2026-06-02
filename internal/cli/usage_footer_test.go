@@ -102,6 +102,66 @@ func TestAppendUsageFooter_FreshLow(t *testing.T) {
 	}
 }
 
+// TestAppendUsageFooterIfNotQuiet_LowQuotaSnapshotProducesWarning is a
+// regression guard for the v0.9-era report that the footer was missing on
+// direct binary invocation of `kizunax review`. The bug could not be
+// reproduced in v0.10 — v0.9 T16 (foreground job persist) added a
+// synchronous RefreshAndWait before the footer call in cmd_review.go, which
+// keeps the cache fresh enough for the footer logic to fire on direct
+// invocation just as it does under the slash-command flow.
+//
+// This test exercises the same surface from a DIFFERENT angle than the
+// existing seedCache-based tests: it goes through usage.SaveCache (the
+// production write path that RefreshAndWait uses) instead of writing raw
+// JSON. That way, if either side of the contract (writer or reader) ever
+// drifts so the cache shape mismatches the footer's expectations, this
+// test fails fast.
+func TestAppendUsageFooterIfNotQuiet_LowQuotaSnapshotProducesWarning(t *testing.T) {
+	tmp := t.TempDir()
+	ws := state.WorkspaceDir{Root: tmp}
+	if err := os.MkdirAll(ws.JobsDir(), 0o700); err != nil {
+		t.Fatal(err)
+	}
+
+	const apiKey = "kx_test1234"
+	now := time.Now()
+	snap := usage.Snapshot{
+		Provider: "anthropic",
+		Usages: []usage.KeyUsage{
+			{
+				KeyHash:   usage.HashKey(apiKey),
+				KeyMask:   usage.MaskKey(apiKey),
+				FetchedAt: now,
+				Coding: &usage.Quota{
+					Kind:      "coding",
+					Plan:      "free",
+					Used:      48,
+					Limit:     50,
+					Remaining: 2, // < absolute-5 coding floor → IsLow true
+					ResetAt:   now.Add(2 * time.Hour),
+				},
+			},
+		},
+	}
+	if err := usage.SaveCache(ws, snap); err != nil {
+		t.Fatalf("SaveCache: %v", err)
+	}
+
+	var buf bytes.Buffer
+	appendUsageFooterIfNotQuiet(&buf, false /*quiet*/, ws, apiKey)
+	out := buf.String()
+	if out == "" {
+		t.Fatalf("expected low-quota warning footer, got empty output")
+	}
+	if !bytes.Contains([]byte(out), []byte("⚠️")) {
+		t.Errorf("footer missing warn glyph:\n%s", out)
+	}
+	// Confirm MaskKey is repopulated live (cache strips it on round-trip).
+	if !bytes.Contains([]byte(out), []byte(usage.MaskKey(apiKey))) {
+		t.Errorf("footer should carry live mask %q:\n%s", usage.MaskKey(apiKey), out)
+	}
+}
+
 func TestAppendUsageFooterByHash_LookupBypassesConfigLoad(t *testing.T) {
 	ws := makeWS(t)
 	workerKey := "kx_WORKER"

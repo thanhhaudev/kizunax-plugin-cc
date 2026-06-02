@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/thanhhaudev/kizunax-plugin-cc/internal/config"
 	"github.com/thanhhaudev/kizunax-plugin-cc/internal/diff"
 	xerrors "github.com/thanhhaudev/kizunax-plugin-cc/internal/errors"
 	"github.com/thanhhaudev/kizunax-plugin-cc/internal/prompt"
@@ -35,6 +36,17 @@ func Run(ctx context.Context, pluginRoot string, p provider.Provider, bundle dif
 	pr, err := prompt.Build(pluginRoot, opts.Mode, bundle, schemaJSON, opts.Focus)
 	if err != nil {
 		return Result{}, err
+	}
+
+	// Pre-flight token guard: estimate input tokens and reject if over budget.
+	inputTokens := prompt.EstimateInputTokens(pr.System, pr.User)
+	maxInput := config.ModelMaxInputTokens(opts.Model)
+	if inputTokens > maxInput {
+		return Result{}, xerrors.User(
+			"input_too_large",
+			fmt.Sprintf("Estimated %d input tokens exceeds model context (%d) for %s.",
+				inputTokens, maxInput, opts.Model),
+			"Reduce diff scope with --paths, target a smaller --commit, or switch to a model with larger context.")
 	}
 
 	req := provider.ChatRequest{

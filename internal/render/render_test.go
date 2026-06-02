@@ -162,6 +162,56 @@ func TestRenderStatusList_IncludesActionsAndDurationColumns(t *testing.T) {
 	}
 }
 
+func TestRenderReview_FindingTitleWithPipeDoesNotBreakTable(t *testing.T) {
+	result := schema.ReviewResult{
+		Verdict: "needs-attention",
+		Summary: "one finding with a pipe",
+		Findings: []schema.Finding{
+			{
+				Severity:       "high",
+				Title:          "uses unsafe pipe | operator",
+				File:           "internal/foo|bar.go",
+				LineStart:      10,
+				LineEnd:        12,
+				Body:           "Body with\nembedded\nnewlines and a | pipe",
+				Recommendation: "Avoid raw pipes in identifiers",
+			},
+		},
+		NextSteps: []string{"refactor"},
+	}
+	bundle := diff.Bundle{TargetLabel: "working tree"}
+	out := RenderReview(result, bundle, 0, prompt.ModeStandard)
+	// The unescaped title must NOT appear as a raw fragment that would break
+	// the table by inserting a phantom column.
+	if strings.Contains(out, "uses unsafe pipe | operator |") {
+		t.Errorf("unescaped pipe in title appears in raw form (would break table):\n%s", out)
+	}
+	// Escaped form must appear in the table row.
+	if !strings.Contains(out, `uses unsafe pipe \| operator`) {
+		t.Errorf("expected escaped title in table row; got:\n%s", out)
+	}
+	// File path with pipe must be escaped inside the location cell.
+	if !strings.Contains(out, `internal/foo\|bar.go:10-12`) {
+		t.Errorf("expected escaped file path in location cell; got:\n%s", out)
+	}
+	// Locate the table-row line for the finding and assert it has exactly
+	// 5 unescaped pipes (table borders: leading | + 4 separators + trailing |).
+	for _, line := range strings.Split(out, "\n") {
+		if !strings.HasPrefix(line, "| 1 ") {
+			continue
+		}
+		rawPipes := 0
+		for i := 0; i < len(line); i++ {
+			if line[i] == '|' && (i == 0 || line[i-1] != '\\') {
+				rawPipes++
+			}
+		}
+		if rawPipes != 5 {
+			t.Errorf("table row has %d raw pipes, want 5 (would break table): %q", rawPipes, line)
+		}
+	}
+}
+
 func contains(s, sub string) bool {
 	for i := 0; i+len(sub) <= len(s); i++ {
 		if s[i:i+len(sub)] == sub {

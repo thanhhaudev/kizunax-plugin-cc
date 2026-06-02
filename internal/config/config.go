@@ -19,8 +19,10 @@ type ProviderEntry struct {
 }
 
 // File is the on-disk layout. v0.6.6+ format:
-//   { "api_keys": [...], "rotation": "round-robin",
-//     "openai_model": "...", "anthropic_model": "..." }
+//
+//	{ "api_keys": [...], "rotation": "round-robin",
+//	  "openai_model": "...", "anthropic_model": "..." }
+//
 // Legacy v0.6.5 fields below are READ ONLY for one-way migration via
 // MigrateLegacy. Save() never writes them (all have omitempty).
 type File struct {
@@ -56,9 +58,9 @@ type Config struct {
 
 func Defaults() Config {
 	return Config{
-		Provider:    "openai",
-		BaseURL:     DefaultOpenAIBaseURL,
-		Model:       DefaultOpenAIModel,
+		Provider:    "anthropic",
+		BaseURL:     DefaultAnthropicBaseURL,
+		Model:       DefaultAnthropicModel,
 		Temperature: DefaultTemperature,
 		MaxTokens:   DefaultMaxTokens,
 	}
@@ -115,7 +117,8 @@ func pickKey(file File) string {
 }
 
 // Load resolves the effective config. providerOverride from --provider flag
-// takes highest precedence, then env, then file default (openai). Each call
+// takes highest precedence, then env, then file default (anthropic since
+// v0.10; explicit "openai" in default_provider still honored). Each call
 // rotates to the next API key in the configured pool.
 func Load(providerOverride string) (Config, error) {
 	cfg := Defaults()
@@ -260,6 +263,11 @@ func MigrateLegacy(f File) File {
 	return f
 }
 
+// noticeOnce ensures the v0.10 openai-fallback stderr notice prints at most
+// once per process, so a binary used repeatedly in the same shell session
+// (e.g. multiple foreground reviews) doesn't spam.
+var noticeOnce atomic.Bool
+
 func resolveProviderName(override string, file File) string {
 	if override != "" {
 		return override
@@ -270,6 +278,77 @@ func resolveProviderName(override string, file File) string {
 	if file.DefaultProvider == "openai" || file.DefaultProvider == "anthropic" {
 		return file.DefaultProvider
 	}
-	return "openai"
+
+	// v0.10 fallback: prefer anthropic unless the workspace looks
+	// openai-only (upgrading v0.9 user whose wizard never wrote
+	// default_provider). Without this, those users silently flip to
+	// anthropic and every review fails with "no API key for provider
+	// anthropic".
+	if isOpenAIOnlyWorkspace(file) {
+		if noticeOnce.CompareAndSwap(false, true) {
+			fmt.Fprintln(os.Stderr, "[kizunax] v0.10+ default is anthropic but this workspace only has openai keys; staying on openai. Run /kizunax:setup to configure anthropic or set default_provider explicitly to silence this notice.")
+		}
+		return "openai"
+	}
+	return "anthropic"
 }
 
+// isOpenAIOnlyWorkspace returns true when the on-disk config shows a usable
+// openai configuration with no parallel anthropic configuration. Handles all
+// three on-disk shapes (legacy flat v0.5, legacy multi-provider v0.6.5,
+// post-migrate v0.6.6+).
+func isOpenAIOnlyWorkspace(file File) bool {
+	hasOpenAI := false
+	hasAnthropic := false
+
+	// Legacy v0.6.5 multi-provider slots.
+	if file.OpenAI != nil && file.OpenAI.APIKey != "" {
+		hasOpenAI = true
+	}
+	if file.Anthropic != nil && file.Anthropic.APIKey != "" {
+		hasAnthropic = true
+	}
+
+	// Legacy v0.5 flat format.
+	if file.Provider == "openai" && file.APIKey != "" {
+		hasOpenAI = true
+	}
+	if file.Provider == "anthropic" && file.APIKey != "" {
+		hasAnthropic = true
+	}
+
+	// Post-migrate v0.6.6+: the pool is a single APIKeys array, but the
+	// retained *Model fields disclose which provider was configured.
+	if file.OpenAIModel != "" && len(file.APIKeys) > 0 {
+		hasOpenAI = true
+	}
+	if file.AnthropicModel != "" && len(file.APIKeys) > 0 {
+		hasAnthropic = true
+	}
+
+	return hasOpenAI && !hasAnthropic
+}
+
+// modelInputBudget is the per-model context-window minus a generous output
+// reserve. Source: KizunaX Coding Plan probe 2026-06-01 confirmed
+// context_window=131072 and max_output_tokens=16384 for MiniMax-M2.x and
+// Kimi-K2.6. Subtract output reserve → 114688 input budget. Anthropic-shape
+// model IDs reuse the same backend so the budget is identical.
+var modelInputBudget = map[string]int{
+	"coding/MiniMax-M2.7":    114688,
+	"coding/MiniMax-M2.5":    114688,
+	"coding/kimi-k2.6":       114688,
+	"MiniMax-M2.7-highspeed": 114688,
+	"MiniMax-M2.5-highspeed": 114688,
+}
+
+// ModelMaxInputTokens returns the input-token budget for a model. Unknown
+// models fall back to a conservative 100000 (smaller than any current
+// KizunaX-served model) so an oversize prompt fails fast rather than
+// silently exceeding the real cap.
+func ModelMaxInputTokens(model string) int {
+	if v, ok := modelInputBudget[model]; ok {
+		return v
+	}
+	return 100000
+}
