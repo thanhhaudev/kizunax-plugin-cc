@@ -40,7 +40,9 @@ func runReviewWithMode(args []string, mode prompt.Mode) error {
 	// --background is accepted for backward compatibility but is a no-op since
 	// v0.9. Async execution is delegated to Claude Code's
 	// Bash(run_in_background:true) at the slash-command layer.
-	_ = hasFlag(args, "--background")
+	if hasFlag(args, "--background") {
+		fmt.Fprintln(os.Stderr, "[kizunax] --background is deprecated since v0.9 (no-op); async is delegated to Claude Code's Bash(run_in_background:true)")
+	}
 	focus := flagValue(args, "--focus")
 	providerOverride := flagValue(args, "--provider")
 
@@ -105,9 +107,11 @@ func runReviewWithMode(args []string, mode prompt.Mode) error {
 	end := time.Now()
 	dur := end.Sub(start)
 
-	if verbose && runErr == nil {
-		fmt.Fprintf(os.Stderr, "[verbose] tokens in=%d out=%d total=%d\n",
-			result.InputTokens, result.OutputTokens, result.TotalTokens)
+	if verbose {
+		if runErr == nil {
+			fmt.Fprintf(os.Stderr, "[verbose] tokens in=%d out=%d total=%d\n",
+				result.InputTokens, result.OutputTokens, result.TotalTokens)
+		}
 		fmt.Fprintf(os.Stderr, "[verbose] duration=%dms model=%s\n",
 			dur.Milliseconds(), cfg.Model)
 	}
@@ -149,7 +153,9 @@ func runReviewWithMode(args []string, mode prompt.Mode) error {
 		}
 	}
 	if ws, wsErr := state.Resolve(cwd); wsErr == nil {
-		_ = job.Save(ws, record)
+		if err := job.Save(ws, record); err != nil {
+			fmt.Fprintf(os.Stderr, "[kizunax] warning: could not persist job record: %v\n", err)
+		}
 	}
 
 	if runErr != nil {
