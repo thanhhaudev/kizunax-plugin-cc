@@ -5,6 +5,8 @@ import (
 	"os"
 	"syscall"
 	"time"
+
+	"github.com/thanhhaudev/kizunax-plugin-cc/internal/state"
 )
 
 // setupStatus prints a human-readable summary of the current setup-web worker
@@ -13,7 +15,28 @@ func setupStatus() error {
 	printCurrentWorker()
 	fmt.Println()
 	printLastResult()
+	fmt.Println()
+	printStopGateStatus()
 	return nil
+}
+
+func printStopGateStatus() {
+	cwd, err := os.Getwd()
+	if err != nil {
+		fmt.Println("Stop-gate: cannot determine (cwd error).")
+		return
+	}
+	ws, err := state.Resolve(cwd)
+	if err != nil {
+		fmt.Println("Stop-gate: cannot determine (state error).")
+		return
+	}
+	sg, _ := state.LoadStopGate(ws)
+	status := "disabled"
+	if sg.Enabled {
+		status = "enabled"
+	}
+	fmt.Printf("Stop-gate: %s\n", status)
 }
 
 func printCurrentWorker() {
