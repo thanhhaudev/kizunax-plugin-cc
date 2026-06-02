@@ -22,9 +22,10 @@ func SessionCleanup(in io.Reader, out, errOut io.Writer, ws state.WorkspaceDir) 
 	return 0
 }
 
-// recoverSilent is the deferred recovery used by every hook entry. Any
-// panic gets logged to stderr and the hook returns its caller value
-// (already set before the panic) — usually 0, so CC never blocks.
+// recoverSilent is the deferred recovery used by every hook entry. A
+// panic is logged to stderr; the hook then returns the zero value of int
+// (0) because no named return is captured — CC never sees a non-zero
+// exit and is therefore never blocked by a hook crash.
 func recoverSilent(errOut io.Writer, name string) {
 	if r := recover(); r != nil {
 		fmt.Fprintf(errOut, "[kizunax-hook %s] panic recovered: %v\n", name, r)

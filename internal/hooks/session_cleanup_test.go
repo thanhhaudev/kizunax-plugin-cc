@@ -16,7 +16,7 @@ func TestSessionCleanup_MarksOrphanJobs(t *testing.T) {
 
 	j1 := job.Job{
 		ID: "20260601T100000-aaaaaaaa", Kind: job.KindReview,
-		Status: job.StatusRunning, PID: -1,
+		Status: job.StatusRunning, PID: 999999,
 		CreatedAt: time.Now(), StartedAt: time.Now(),
 	}
 	if err := job.Save(ws, j1); err != nil {
@@ -24,7 +24,7 @@ func TestSessionCleanup_MarksOrphanJobs(t *testing.T) {
 	}
 	j2 := job.Job{
 		ID: "20260601T110000-bbbbbbbb", Kind: job.KindReview,
-		Status: job.StatusCompleted, PID: -1,
+		Status: job.StatusCompleted, PID: 999999,
 		CreatedAt: time.Now(), StartedAt: time.Now(),
 	}
 	if err := job.Save(ws, j2); err != nil {
@@ -38,8 +38,8 @@ func TestSessionCleanup_MarksOrphanJobs(t *testing.T) {
 	}
 
 	got1, _ := job.Load(ws, j1.ID)
-	if got1.Status != job.StatusFailed && got1.Status != job.StatusCancelled {
-		t.Errorf("j1 status: got %s, want failed or cancelled", got1.Status)
+	if got1.Status != job.StatusFailed {
+		t.Errorf("j1 status: got %s, want failed", got1.Status)
 	}
 	got2, _ := job.Load(ws, j2.ID)
 	if got2.Status != job.StatusCompleted {
@@ -69,7 +69,7 @@ func TestSessionCleanup_Idempotent(t *testing.T) {
 	ws := makeWS(t)
 	j := job.Job{
 		ID: "20260601T100000-cccccccc", Kind: job.KindReview,
-		Status: job.StatusRunning, PID: -1,
+		Status: job.StatusRunning, PID: 999999,
 		CreatedAt: time.Now(), StartedAt: time.Now(),
 	}
 	_ = job.Save(ws, j)
