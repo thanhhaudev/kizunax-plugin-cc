@@ -28,6 +28,7 @@ func runAdversarialReview(args []string) error {
 
 func runReviewWithMode(args []string, mode prompt.Mode) error {
 	verbose := hasFlag(args, "--verbose")
+	quiet := hasFlag(args, "--quiet")
 	background := hasFlag(args, "--background")
 	focus := flagValue(args, "--focus")
 	providerOverride := flagValue(args, "--provider")
@@ -86,6 +87,7 @@ func runReviewWithMode(args []string, mode prompt.Mode) error {
 	}
 
 	ctx := context.Background()
+	start := time.Now()
 	result, err := runner.Run(ctx, pluginRoot, p, bundle, runner.Options{
 		Mode:        mode,
 		Focus:       focus,
@@ -93,6 +95,7 @@ func runReviewWithMode(args []string, mode prompt.Mode) error {
 		Temperature: cfg.Temperature,
 		MaxTokens:   cfg.MaxTokens,
 	})
+	dur := time.Since(start)
 	if err != nil {
 		return err
 	}
@@ -100,6 +103,8 @@ func runReviewWithMode(args []string, mode prompt.Mode) error {
 	if verbose {
 		fmt.Fprintf(os.Stderr, "[verbose] tokens in=%d out=%d total=%d\n",
 			result.InputTokens, result.OutputTokens, result.TotalTokens)
+		fmt.Fprintf(os.Stderr, "[verbose] duration=%dms model=%s\n",
+			dur.Milliseconds(), cfg.Model)
 	}
 
 	out := render.RenderReview(result.Review, bundle, result.TotalTokens, mode)
@@ -111,7 +116,7 @@ func runReviewWithMode(args []string, mode prompt.Mode) error {
 		if base, baseErr := usage.DeriveBase(cfg.BaseURL); baseErr == nil {
 			usage.RefreshAndWait(base, cfg.APIKey, ws, 6*time.Second)
 		}
-		appendUsageFooter(os.Stdout, ws, cfg.APIKey)
+		appendUsageFooterIfNotQuiet(os.Stdout, quiet, ws, cfg.APIKey)
 	}
 	return nil
 }
