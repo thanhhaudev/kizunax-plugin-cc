@@ -1,5 +1,11 @@
 //go:build !windows
 
+// LEGACY (v0.9+): this Setpgid-detach path is no longer invoked by the
+// review command. It remains in the codebase for any future long-running
+// task command. Review now runs synchronously inside Claude Code's
+// Bash(run_in_background:true) bash task, which handles task tracking
+// and Claude notification natively.
+
 package job
 
 import (

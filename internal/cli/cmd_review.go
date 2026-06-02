@@ -10,7 +10,6 @@ import (
 	"github.com/thanhhaudev/kizunax-plugin-cc/internal/diff"
 	xerrors "github.com/thanhhaudev/kizunax-plugin-cc/internal/errors"
 	"github.com/thanhhaudev/kizunax-plugin-cc/internal/git"
-	"github.com/thanhhaudev/kizunax-plugin-cc/internal/job"
 	"github.com/thanhhaudev/kizunax-plugin-cc/internal/prompt"
 	"github.com/thanhhaudev/kizunax-plugin-cc/internal/render"
 	"github.com/thanhhaudev/kizunax-plugin-cc/internal/runner"
@@ -29,7 +28,10 @@ func runAdversarialReview(args []string) error {
 func runReviewWithMode(args []string, mode prompt.Mode) error {
 	verbose := hasFlag(args, "--verbose")
 	quiet := hasFlag(args, "--quiet")
-	background := hasFlag(args, "--background")
+	// --background is accepted for backward compatibility but is a no-op since
+	// v0.9. Async execution is delegated to Claude Code's
+	// Bash(run_in_background:true) at the slash-command layer.
+	_ = hasFlag(args, "--background")
 	focus := flagValue(args, "--focus")
 	providerOverride := flagValue(args, "--provider")
 
@@ -45,10 +47,6 @@ func runReviewWithMode(args []string, mode prompt.Mode) error {
 
 	if err := git.EnsureRepo(cwd); err != nil {
 		return err
-	}
-
-	if background {
-		return spawnBackgroundJob(cwd, mode, target, focus, providerOverride)
 	}
 
 	cfg, err := config.Load(providerOverride)
@@ -118,41 +116,6 @@ func runReviewWithMode(args []string, mode prompt.Mode) error {
 		}
 		appendUsageFooterIfNotQuiet(os.Stdout, quiet, ws, cfg.APIKey)
 	}
-	return nil
-}
-
-func spawnBackgroundJob(cwd string, mode prompt.Mode, target git.Target, focus, providerOverride string) error {
-	ws, err := state.Resolve(cwd)
-	if err != nil {
-		return xerrors.Internal("state_resolve", "cannot resolve workspace state dir", err)
-	}
-
-	// Resolve provider name now so the worker uses the same one even if env changes.
-	cfg, err := config.Load(providerOverride)
-	if err != nil {
-		return err
-	}
-
-	kind := job.KindReview
-	if mode == prompt.ModeAdversarial {
-		kind = job.KindAdversarialReview
-	}
-
-	req := job.Request{
-		Mode:     mode.String(),
-		Target:   target,
-		Focus:    focus,
-		Provider: cfg.Provider,
-	}
-
-	j, err := job.SpawnBackground(cwd, ws, kind, req)
-	if err != nil {
-		return err
-	}
-
-	fmt.Printf("Job %s started (kind=%s provider=%s target=%s).\n", j.ID, j.Kind, cfg.Provider, target.Label())
-	fmt.Printf("Check progress: kizunax status %s\n", j.ID)
-	fmt.Printf("Read result:    kizunax result %s\n", j.ID)
 	return nil
 }
 
