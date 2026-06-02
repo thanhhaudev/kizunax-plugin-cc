@@ -88,10 +88,10 @@ func StopGate(in io.Reader, out, errOut io.Writer, ws state.WorkspaceDir, cwd st
 // intentionally discarded.
 func hashBundle(b diff.Bundle) []byte {
 	h := sha256.New()
-	io.WriteString(h, b.Diff) //nolint:errcheck // sha256 never errors
+	_, _ = io.WriteString(h, b.Diff)
 	for _, u := range b.Untracked {
-		io.WriteString(h, u.Path)    //nolint:errcheck
-		io.WriteString(h, u.Content) //nolint:errcheck
+		_, _ = io.WriteString(h, u.Path)
+		_, _ = io.WriteString(h, u.Content)
 	}
 	sum := h.Sum(nil)
 	return sum[:]
