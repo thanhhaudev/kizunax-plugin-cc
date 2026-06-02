@@ -45,8 +45,14 @@ func TestSaveLoadCache_RoundTrip(t *testing.T) {
 	if entry.Coding == nil || entry.Coding.Used != 100 {
 		t.Errorf("coding not round-tripped")
 	}
+	if entry.Coding.Kind != "coding" {
+		t.Errorf("Coding.Kind lost on round-trip: %q (needed for IsLow's coding absolute floor)", entry.Coding.Kind)
+	}
 	if entry.Credits == nil || entry.Credits.Remaining != 99000 {
 		t.Errorf("credits not round-tripped")
+	}
+	if entry.Credits.Kind != "credits" {
+		t.Errorf("Credits.Kind lost on round-trip: %q", entry.Credits.Kind)
 	}
 }
 

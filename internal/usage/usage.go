@@ -11,7 +11,6 @@ import (
 
 const (
 	httpTimeout       = 5 * time.Second
-	defaultBarWidth   = 20
 	maxConcurrentHTTP = 32
 )
 
@@ -33,7 +32,7 @@ type KeyUsage struct {
 
 // Quota is one endpoint's parsed response.
 type Quota struct {
-	Kind      string    `json:"-"` // "coding" | "credits"
+	Kind      string    `json:"kind"` // "coding" | "credits" — persisted so IsLow's coding absolute floor survives cache round-trip
 	Plan      string    `json:"plan"`
 	Used      int64     `json:"used"`
 	Limit     int64     `json:"limit"`
