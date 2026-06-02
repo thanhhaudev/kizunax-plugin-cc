@@ -14,7 +14,7 @@ import (
 	"github.com/thanhhaudev/kizunax-plugin-cc/internal/usage"
 )
 
-// runUsage is `kizunax usage [--provider X] [--refresh] [--verbose]`.
+// runUsage is `kizunax usage [--provider X] [--verbose]`.
 func runUsage(args []string) error {
 	verbose := hasFlag(args, "--verbose")
 	providerOverride := flagValue(args, "--provider")

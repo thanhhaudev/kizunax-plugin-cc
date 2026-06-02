@@ -87,7 +87,7 @@ func RenderJobDetail(j job.Job) string {
 	}
 	if j.Result != nil {
 		sb.WriteString(fmt.Sprintf("\nVerdict: **%s** with %d findings.\n", j.Result.Verdict, len(j.Result.Findings)))
-		sb.WriteString(fmt.Sprintf("\nRun `kizunax result %s` to see full review.\n", j.ID))
+		sb.WriteString(fmt.Sprintf("\nRun `/kizunax:result %s` to see full review.\n", j.ID))
 	}
 	return sb.String()
 }

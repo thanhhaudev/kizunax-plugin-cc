@@ -62,7 +62,7 @@ Usage:
   kizunax result              <job-id-or-prefix>
   kizunax cancel              <job-id-or-prefix>
   kizunax setup               [--check | --rebuild]
-  kizunax usage               [--provider <name>] [--refresh] [--verbose]
+  kizunax usage               [--provider <name>] [--verbose]
   kizunax version
 
 Target flags (pick at most one; default --working-tree):
