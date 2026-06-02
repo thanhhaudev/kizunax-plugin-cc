@@ -56,9 +56,9 @@ type Config struct {
 
 func Defaults() Config {
 	return Config{
-		Provider:    "openai",
-		BaseURL:     DefaultOpenAIBaseURL,
-		Model:       DefaultOpenAIModel,
+		Provider:    "anthropic",
+		BaseURL:     DefaultAnthropicBaseURL,
+		Model:       DefaultAnthropicModel,
 		Temperature: DefaultTemperature,
 		MaxTokens:   DefaultMaxTokens,
 	}
@@ -115,7 +115,8 @@ func pickKey(file File) string {
 }
 
 // Load resolves the effective config. providerOverride from --provider flag
-// takes highest precedence, then env, then file default (openai). Each call
+// takes highest precedence, then env, then file default (anthropic since
+// v0.10; explicit "openai" in default_provider still honored). Each call
 // rotates to the next API key in the configured pool.
 func Load(providerOverride string) (Config, error) {
 	cfg := Defaults()
@@ -270,6 +271,6 @@ func resolveProviderName(override string, file File) string {
 	if file.DefaultProvider == "openai" || file.DefaultProvider == "anthropic" {
 		return file.DefaultProvider
 	}
-	return "openai"
+	return "anthropic"
 }
 
