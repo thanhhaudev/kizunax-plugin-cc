@@ -21,7 +21,9 @@ func RenderStatusList(jobs []job.Job) string {
 		age := now.Sub(j.CreatedAt).Round(time.Second)
 		sb.WriteString(fmt.Sprintf("| `%s` | %s | %s | %s | %s | %s | %s |\n",
 			j.ID, j.Kind, statusIcon(j.Status), age,
-			formatDuration(j.DurationMs), j.Request.Target.Label(), actionsFor(j)))
+			formatDuration(j.DurationMs),
+			escapeMarkdownCell(j.Request.Target.Label()),
+			actionsFor(j)))
 	}
 	return sb.String()
 }

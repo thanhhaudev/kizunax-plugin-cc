@@ -48,7 +48,12 @@ func RenderReview(r schema.ReviewResult, bundle diff.Bundle, totalTokens int, mo
 		sb.WriteString("|---|---|---|---|\n")
 		for i, f := range findings {
 			sb.WriteString(fmt.Sprintf("| %d | %s | `%s:%d-%d` | %s |\n",
-				i+1, severityIcon(f.Severity), f.File, f.LineStart, f.LineEnd, escapePipe(f.Title)))
+				i+1,
+				severityIcon(f.Severity),
+				escapeMarkdownCell(f.File),
+				f.LineStart,
+				f.LineEnd,
+				escapeMarkdownCell(f.Title)))
 		}
 		sb.WriteString("\n")
 
@@ -107,8 +112,4 @@ func severityIcon(s string) string {
 		return "🔵 low"
 	}
 	return s
-}
-
-func escapePipe(s string) string {
-	return strings.ReplaceAll(s, "|", "\\|")
 }
