@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"time"
 
 	"github.com/thanhhaudev/kizunax-plugin-cc/internal/config"
 	"github.com/thanhhaudev/kizunax-plugin-cc/internal/diff"
@@ -14,6 +15,7 @@ import (
 	"github.com/thanhhaudev/kizunax-plugin-cc/internal/render"
 	"github.com/thanhhaudev/kizunax-plugin-cc/internal/runner"
 	"github.com/thanhhaudev/kizunax-plugin-cc/internal/state"
+	"github.com/thanhhaudev/kizunax-plugin-cc/internal/usage"
 )
 
 func runReview(args []string) error {
@@ -102,6 +104,15 @@ func runReviewWithMode(args []string, mode prompt.Mode) error {
 
 	out := render.RenderReview(result.Review, bundle, result.TotalTokens, mode)
 	fmt.Print(out)
+
+	// Sync refresh BEFORE footer so the cache reflects this review's quota
+	// usage. RefreshAsync alone would race process exit and skip the HTTP.
+	if ws, wsErr := state.Resolve(cwd); wsErr == nil {
+		if base, baseErr := usage.DeriveBase(cfg.BaseURL); baseErr == nil {
+			usage.RefreshAndWait(base, cfg.APIKey, ws, 6*time.Second)
+		}
+		appendUsageFooter(os.Stdout, ws, cfg.APIKey)
+	}
 	return nil
 }
 

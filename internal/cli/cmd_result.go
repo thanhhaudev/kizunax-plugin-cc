@@ -69,5 +69,9 @@ func runResult(args []string) error {
 		totalTokens = j.Tokens.Total
 	}
 	fmt.Print(render.RenderReview(*j.Result, bundle, totalTokens, mode))
+
+	// Bound the footer lookup to the exact key the worker used (persisted at
+	// run time). Avoids calling config.Load which rotates round-robin.
+	appendUsageFooterByHash(os.Stdout, ws, j.Request.KeyHash, j.Request.KeyMask)
 	return nil
 }
