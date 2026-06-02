@@ -3,6 +3,7 @@ package usage
 import (
 	"context"
 	"net/http"
+	"time"
 
 	"github.com/thanhhaudev/kizunax-plugin-cc/internal/state"
 )
@@ -43,4 +44,21 @@ func RefreshAsyncWithClient(client *http.Client, host, usedKey string, ws state.
 		ku := f.Fetch(ctx, usedKey)
 		_ = SaveCache(ws, Snapshot{Usages: []KeyUsage{ku}})
 	}()
+}
+
+// RefreshAndWait runs RefreshAsync and blocks until it finishes or `timeout`
+// elapses, whichever comes first. Used by paths that need the cache populated
+// before the calling process exits (foreground review, background worker).
+// On timeout the goroutine keeps running; callers must not assume cache write
+// completed. usedKey="" → no-op.
+func RefreshAndWait(host, usedKey string, ws state.WorkspaceDir, timeout time.Duration) {
+	if usedKey == "" {
+		return
+	}
+	done := make(chan struct{})
+	RefreshAsyncWithClient(nil, host, usedKey, ws, func() { close(done) })
+	select {
+	case <-done:
+	case <-time.After(timeout):
+	}
 }

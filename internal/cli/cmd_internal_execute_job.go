@@ -125,13 +125,7 @@ func executeJobBody(cwd string, ws state.WorkspaceDir, j *job.Job) error {
 	// Refresh usage cache so `kizunax result` sees a low-quota footer if needed.
 	// Synchronous-bounded within the worker process; the parent already exited.
 	if base, err := usage.DeriveBase(cfg.BaseURL); err == nil {
-		done := make(chan struct{})
-		usage.RefreshAsyncWithClient(nil, base, cfg.APIKey, ws, func() { close(done) })
-		select {
-		case <-done:
-		case <-time.After(6 * time.Second):
-			// timeout; abandon refresh, never block worker exit
-		}
+		usage.RefreshAndWait(base, cfg.APIKey, ws, 6*time.Second)
 	}
 
 	return nil
