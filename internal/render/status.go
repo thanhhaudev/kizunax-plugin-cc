@@ -14,15 +14,42 @@ func RenderStatusList(jobs []job.Job) string {
 	}
 	var sb strings.Builder
 	sb.WriteString(fmt.Sprintf("Jobs (%d):\n\n", len(jobs)))
-	sb.WriteString("| ID | Kind | Status | Age | Target |\n")
-	sb.WriteString("|---|---|---|---|---|\n")
+	sb.WriteString("| ID | Kind | Status | Age | Duration | Target | Actions |\n")
+	sb.WriteString("|---|---|---|---|---|---|---|\n")
 	now := time.Now().UTC()
 	for _, j := range jobs {
 		age := now.Sub(j.CreatedAt).Round(time.Second)
-		sb.WriteString(fmt.Sprintf("| `%s` | %s | %s | %s | %s |\n",
-			j.ID, j.Kind, statusIcon(j.Status), age, j.Request.Target.Label()))
+		sb.WriteString(fmt.Sprintf("| `%s` | %s | %s | %s | %s | %s | %s |\n",
+			j.ID, j.Kind, statusIcon(j.Status), age,
+			formatDuration(j.DurationMs), j.Request.Target.Label(), actionsFor(j)))
 	}
 	return sb.String()
+}
+
+func formatDuration(ms int64) string {
+	if ms <= 0 {
+		return ""
+	}
+	if ms < 1000 {
+		return fmt.Sprintf("%dms", ms)
+	}
+	secs := float64(ms) / 1000.0
+	if secs < 60 {
+		return fmt.Sprintf("%.1fs", secs)
+	}
+	return fmt.Sprintf("%dm %ds", int(secs/60), int(secs)%60)
+}
+
+func actionsFor(j job.Job) string {
+	var acts []string
+	switch j.Status {
+	case job.StatusRunning:
+		acts = append(acts, fmt.Sprintf("`/kizunax:status %s`", j.ID))
+		acts = append(acts, fmt.Sprintf("`/kizunax:cancel %s`", j.ID))
+	case job.StatusCompleted, job.StatusFailed:
+		acts = append(acts, fmt.Sprintf("`/kizunax:result %s`", j.ID))
+	}
+	return strings.Join(acts, "<br>")
 }
 
 func RenderJobDetail(j job.Job) string {

@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"errors"
 	"fmt"
 	"os"
 
@@ -24,22 +25,59 @@ func runStatus(args []string) error {
 	// Sweep orphans (running jobs whose worker died) before listing.
 	job.SweepOrphans(ws)
 
-	// If a job id is given, render single-job detail.
-	if len(args) > 0 && !startsWithFlag(args[0]) {
-		id := args[0]
-		j, err := job.Load(ws, id)
-		if err != nil {
-			return xerrors.User("job_not_found",
-				fmt.Sprintf("no job with id %s", id), "use `kizunax status` (no args) to list")
+	// Parse flags + positional id.
+	all := false
+	var id string
+	for _, a := range args {
+		switch a {
+		case "--all":
+			all = true
+		default:
+			if !startsWithFlag(a) && id == "" {
+				id = a
+			}
+		}
+	}
+
+	// Choose listing scope. --all bypasses the per-session filter.
+	var jobs []job.Job
+	if all {
+		jobs, err = job.List(ws)
+	} else {
+		jobs, err = job.ListBySession(ws, CurrentSessionID())
+	}
+	if err != nil {
+		return xerrors.Internal("list_jobs", "cannot list jobs", err)
+	}
+
+	// If a job id (or prefix) is given, render single-job detail.
+	if id != "" {
+		// Search across *all* jobs in the workspace so prefix lookup works even
+		// when the id belongs to a different session.
+		searchSet := jobs
+		if !all {
+			searchSet, err = job.List(ws)
+			if err != nil {
+				return xerrors.Internal("list_jobs", "cannot list jobs", err)
+			}
+		}
+		j, matchErr := job.MatchByPrefix(searchSet, id)
+		if matchErr != nil {
+			switch {
+			case errors.Is(matchErr, job.ErrAmbiguousJobID):
+				return xerrors.User("job_ambiguous", matchErr.Error(), "use a longer id prefix")
+			case errors.Is(matchErr, job.ErrJobNotFound):
+				return xerrors.User("job_not_found",
+					fmt.Sprintf("no job with id or prefix %q", id),
+					"use `kizunax status` (no args) to list")
+			default:
+				return xerrors.Internal("job_lookup", "cannot match job id", matchErr)
+			}
 		}
 		fmt.Print(render.RenderJobDetail(j))
 		return nil
 	}
 
-	jobs, err := job.List(ws)
-	if err != nil {
-		return xerrors.Internal("list_jobs", "cannot list jobs", err)
-	}
 	fmt.Print(render.RenderStatusList(jobs))
 	return nil
 }
