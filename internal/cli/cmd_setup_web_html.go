@@ -74,7 +74,7 @@ const setupFormHTML = `<!DOCTYPE html>
       var keysArea = document.querySelector('textarea[name="api_keys"]');
       var openaiSelect = document.getElementById('openai_model');
       var anthropicSelect = document.getElementById('anthropic_model');
-      var token = {{.Token | printf "%q"}};
+      var token = '{{.Token}}';
 
       function firstKey() {
         var raw = (keysArea.value || '').split('\n');
