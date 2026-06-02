@@ -1,6 +1,8 @@
 package usage
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"net/http"
 	"time"
 )
@@ -50,4 +52,10 @@ func NewFetcher(baseURL string) *Fetcher {
 		Client:  &http.Client{Timeout: httpTimeout},
 		BaseURL: baseURL,
 	}
+}
+
+// hashKey returns the sha256 hex of an API key for safe use as a cache key.
+func hashKey(apiKey string) string {
+	h := sha256.Sum256([]byte(apiKey))
+	return hex.EncodeToString(h[:])
 }
