@@ -185,4 +185,3 @@ func parseTarget(args []string) (git.Target, error) {
 	}
 	return t, nil
 }
-
