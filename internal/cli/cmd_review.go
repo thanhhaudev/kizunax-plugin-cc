@@ -10,12 +10,21 @@ import (
 	"github.com/thanhhaudev/kizunax-plugin-cc/internal/diff"
 	xerrors "github.com/thanhhaudev/kizunax-plugin-cc/internal/errors"
 	"github.com/thanhhaudev/kizunax-plugin-cc/internal/git"
+	"github.com/thanhhaudev/kizunax-plugin-cc/internal/job"
 	"github.com/thanhhaudev/kizunax-plugin-cc/internal/prompt"
 	"github.com/thanhhaudev/kizunax-plugin-cc/internal/render"
 	"github.com/thanhhaudev/kizunax-plugin-cc/internal/runner"
 	"github.com/thanhhaudev/kizunax-plugin-cc/internal/state"
 	"github.com/thanhhaudev/kizunax-plugin-cc/internal/usage"
 )
+
+// kindFromMode maps a prompt mode to the corresponding job.Kind.
+func kindFromMode(mode prompt.Mode) job.Kind {
+	if mode == prompt.ModeAdversarial {
+		return job.KindAdversarialReview
+	}
+	return job.KindReview
+}
 
 func runReview(args []string) error {
 	return runReviewWithMode(args, prompt.ModeStandard)
@@ -86,23 +95,65 @@ func runReviewWithMode(args []string, mode prompt.Mode) error {
 
 	ctx := context.Background()
 	start := time.Now()
-	result, err := runner.Run(ctx, pluginRoot, p, bundle, runner.Options{
+	result, runErr := runner.Run(ctx, pluginRoot, p, bundle, runner.Options{
 		Mode:        mode,
 		Focus:       focus,
 		Model:       cfg.Model,
 		Temperature: cfg.Temperature,
 		MaxTokens:   cfg.MaxTokens,
 	})
-	dur := time.Since(start)
-	if err != nil {
-		return err
-	}
+	end := time.Now()
+	dur := end.Sub(start)
 
-	if verbose {
+	if verbose && runErr == nil {
 		fmt.Fprintf(os.Stderr, "[verbose] tokens in=%d out=%d total=%d\n",
 			result.InputTokens, result.OutputTokens, result.TotalTokens)
 		fmt.Fprintf(os.Stderr, "[verbose] duration=%dms model=%s\n",
 			dur.Milliseconds(), cfg.Model)
+	}
+
+	// Persist a job record so /kizunax:status, /result, /cancel work for this
+	// review. Foreground reviews are still 1-shot, but the record gives audit
+	// + retrieval. Best-effort: a save failure must not fail the review.
+	record := job.Job{
+		ID:          job.NewID(),
+		Kind:        kindFromMode(mode),
+		SessionID:   CurrentSessionID(),
+		CreatedAt:   start,
+		StartedAt:   start,
+		CompletedAt: &end,
+		DurationMs:  dur.Milliseconds(),
+		Request: job.Request{
+			Mode:     mode.String(),
+			Target:   target,
+			Focus:    focus,
+			Provider: cfg.Provider,
+			Model:    cfg.Model,
+		},
+		LogPath:  "",
+		Warnings: bundle.Warnings,
+	}
+	if runErr != nil {
+		record.Status = job.StatusFailed
+		record.Error = runErr.Error()
+	} else {
+		record.Status = job.StatusCompleted
+		review := result.Review
+		record.Result = &review
+		if result.TotalTokens > 0 || result.InputTokens > 0 || result.OutputTokens > 0 {
+			record.Tokens = &job.TokenUsage{
+				Input:  result.InputTokens,
+				Output: result.OutputTokens,
+				Total:  result.TotalTokens,
+			}
+		}
+	}
+	if ws, wsErr := state.Resolve(cwd); wsErr == nil {
+		_ = job.Save(ws, record)
+	}
+
+	if runErr != nil {
+		return runErr
 	}
 
 	out := render.RenderReview(result.Review, bundle, result.TotalTokens, mode)
