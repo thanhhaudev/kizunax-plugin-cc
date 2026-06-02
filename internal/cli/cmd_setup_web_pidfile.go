@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -11,9 +12,18 @@ import (
 	"github.com/thanhhaudev/kizunax-plugin-cc/internal/config"
 )
 
-// setupWebPIDPath returns the absolute path to the setup-web PID file
-// (~/.kizunax/.setup-web.pid).
-func setupWebPIDPath() (string, error) {
+// setupWebState describes the on-disk state of a currently running setup-web
+// worker. Stored as JSON at ~/.kizunax/.setup-web.pid (mode 0600).
+type setupWebState struct {
+	PID          int       `json:"pid"`
+	StartedAt    time.Time `json:"started_at"`
+	IdleDeadline time.Time `json:"idle_deadline"`
+}
+
+// setupWebStatePath returns the absolute path to the setup-web state file.
+// The filename is `.setup-web.pid` for migration compatibility with v0.6.4
+// (which wrote a plain integer there); the new format is JSON.
+func setupWebStatePath() (string, error) {
 	configPath, err := config.Path()
 	if err != nil {
 		return "", err
@@ -21,26 +31,54 @@ func setupWebPIDPath() (string, error) {
 	return filepath.Join(filepath.Dir(configPath), ".setup-web.pid"), nil
 }
 
-// writeSetupWebPID writes pid to ~/.kizunax/.setup-web.pid (0600), creating
-// the directory if needed.
-func writeSetupWebPID(pid int) error {
-	path, err := setupWebPIDPath()
+// writeSetupWebState writes the JSON state to ~/.kizunax/.setup-web.pid (0600),
+// atomically via tmp + rename.
+func writeSetupWebState(s setupWebState) error {
+	path, err := setupWebStatePath()
 	if err != nil {
 		return err
 	}
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return err
 	}
+	data, err := json.MarshalIndent(s, "", "  ")
+	if err != nil {
+		return err
+	}
 	tmp := path + ".tmp"
-	if err := os.WriteFile(tmp, []byte(strconv.Itoa(pid)+"\n"), 0o600); err != nil {
+	if err := os.WriteFile(tmp, data, 0o600); err != nil {
 		return err
 	}
 	return os.Rename(tmp, path)
 }
 
-// removeSetupWebPID removes the PID file. Returns nil if it was already absent.
-func removeSetupWebPID() error {
-	path, err := setupWebPIDPath()
+// loadSetupWebState reads the state file. Tolerant of v0.6.4 format: if JSON
+// parse fails, falls back to parsing the file body as a plain integer PID
+// (zero-value StartedAt / IdleDeadline). Returns os.ErrNotExist if the file
+// is absent.
+func loadSetupWebState() (setupWebState, error) {
+	var s setupWebState
+	path, err := setupWebStatePath()
+	if err != nil {
+		return s, err
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return s, err
+	}
+	if err := json.Unmarshal(data, &s); err == nil && s.PID > 0 {
+		return s, nil
+	}
+	pid, perr := strconv.Atoi(strings.TrimSpace(string(data)))
+	if perr != nil || pid <= 0 {
+		return setupWebState{}, perr
+	}
+	return setupWebState{PID: pid}, nil
+}
+
+// removeSetupWebState removes the state file. Returns nil if it was already absent.
+func removeSetupWebState() error {
+	path, err := setupWebStatePath()
 	if err != nil {
 		return err
 	}
@@ -51,46 +89,31 @@ func removeSetupWebPID() error {
 	return nil
 }
 
-// killOldSetupWebWorker reads the PID file (if present), sends SIGTERM to that
-// pid if the process is alive, and waits briefly for it to exit. Always returns
-// nil — kill failures are non-fatal (e.g. the old worker is already dead).
+// killOldSetupWebWorker reads the state file, SIGTERMs the recorded PID if it
+// is alive, then removes the state file. Always returns nil — kill failures
+// are non-fatal (e.g. the old worker is already dead).
 func killOldSetupWebWorker() error {
-	path, err := setupWebPIDPath()
+	s, err := loadSetupWebState()
+	if err != nil || s.PID <= 0 {
+		_ = removeSetupWebState()
+		return nil
+	}
+	proc, err := os.FindProcess(s.PID)
 	if err != nil {
+		_ = removeSetupWebState()
 		return nil
 	}
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return nil
-	}
-	s := strings.TrimSpace(string(data))
-	pid, err := strconv.Atoi(s)
-	if err != nil || pid <= 0 {
-		_ = os.Remove(path)
-		return nil
-	}
-	proc, err := os.FindProcess(pid)
-	if err != nil {
-		_ = os.Remove(path)
-		return nil
-	}
-	// Signal 0 is an alive-check on Unix.
 	if err := proc.Signal(syscall.Signal(0)); err != nil {
-		// Process is gone.
-		_ = os.Remove(path)
+		_ = removeSetupWebState()
 		return nil
 	}
-	// Send SIGTERM; ignore errors (race against natural exit).
 	_ = proc.Signal(syscall.SIGTERM)
-	// Brief wait so the new listener doesn't collide with leftover state.
-	// We don't WaitForExit — process is detached and we don't own it.
 	for i := 0; i < 20; i++ {
 		if err := proc.Signal(syscall.Signal(0)); err != nil {
 			break
 		}
 		time.Sleep(50 * time.Millisecond)
 	}
-	_ = os.Remove(path)
+	_ = removeSetupWebState()
 	return nil
 }
-

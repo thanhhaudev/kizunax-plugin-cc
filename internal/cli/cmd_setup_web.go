@@ -73,8 +73,10 @@ func setupWeb() error {
 	_ = killOldSetupWebWorker()
 
 	url := fmt.Sprintf("http://127.0.0.1:%d/?t=%s", port, token)
+	idleExit := time.Now().Add(webIdleTimeout)
 	fmt.Println("Open this in your browser to finish setup:")
 	fmt.Println(url)
+	fmt.Printf("Worker idle-exits at %s unless you save first.\n", idleExit.Format("15:04:05"))
 
 	if !noOpen {
 		openInBrowser(url)
@@ -87,8 +89,13 @@ func setupWeb() error {
 		return err
 	}
 
-	if err := writeSetupWebPID(pid); err != nil {
-		fmt.Fprintf(os.Stderr, "warning: cannot write PID file: %v\n", err)
+	startedAt := idleExit.Add(-webIdleTimeout)
+	if err := writeSetupWebState(setupWebState{
+		PID:          pid,
+		StartedAt:    startedAt,
+		IdleDeadline: idleExit,
+	}); err != nil {
+		fmt.Fprintf(os.Stderr, "warning: cannot write state file: %v\n", err)
 	}
 	return nil
 }
@@ -172,12 +179,29 @@ func serveSetupWeb(ln net.Listener, token string) error {
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 		_ = srv.Shutdown(shutdownCtx)
+		configPath, _ := config.Path()
+		_ = writeSetupWebResult(setupWebResult{
+			Outcome:     setupWebSuccess,
+			Message:     "configuration saved",
+			CompletedAt: time.Now(),
+			ConfigPath:  configPath,
+		})
 		return nil
 	case <-time.After(webIdleTimeout):
 		_ = srv.Close()
+		_ = writeSetupWebResult(setupWebResult{
+			Outcome:     setupWebTimeout,
+			Message:     "5 min idle without save",
+			CompletedAt: time.Now(),
+		})
 		return xerrors.User("timeout", "setup timed out without a save", "")
 	case <-sigCh:
 		_ = srv.Close()
+		_ = writeSetupWebResult(setupWebResult{
+			Outcome:     setupWebCancelled,
+			Message:     "signal received",
+			CompletedAt: time.Now(),
+		})
 		return xerrors.User("cancelled", "setup cancelled by signal", "")
 	}
 }

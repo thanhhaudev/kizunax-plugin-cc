@@ -25,8 +25,8 @@ func runInternalSetupWebWorker(args []string) error {
 		return xerrors.Internal("worker_listen", "cannot wrap inherited listener", err)
 	}
 
-	// Best-effort PID-file cleanup on every exit path.
-	defer func() { _ = removeSetupWebPID() }()
+	// Best-effort state-file cleanup on every exit path.
+	defer func() { _ = removeSetupWebState() }()
 
 	return serveSetupWeb(ln, token)
 }
