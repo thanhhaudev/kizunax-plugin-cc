@@ -6,7 +6,7 @@ import (
 	xerrors "github.com/thanhhaudev/kizunax-plugin-cc/internal/errors"
 )
 
-const Version = "0.6.9"
+const Version = "0.7.0"
 
 func Dispatch(args []string) error {
 	if len(args) == 0 {
@@ -31,6 +31,8 @@ func Dispatch(args []string) error {
 		return runInternalExecuteJob(args[1:])
 	case "internal-setup-web-worker":
 		return runInternalSetupWebWorker(args[1:])
+	case "hook":
+		return runHook(args[1:])
 	case "version", "--version", "-v":
 		fmt.Printf("kizunax %s\n", Version)
 		return nil
@@ -82,6 +84,7 @@ Commands:
   result               Render the result of a finished job
   cancel               SIGTERM a running job's worker
   setup                Initialize config (provider, model, API key)
+  hook                 Internal — invoked by hooks.json (session-cleanup, stop-gate)
 
 `, Version)
 }

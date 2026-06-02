@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"path/filepath"
 
 	"github.com/thanhhaudev/kizunax-plugin-cc/internal/config"
 	"github.com/thanhhaudev/kizunax-plugin-cc/internal/diff"
@@ -74,7 +73,7 @@ func runReviewWithMode(args []string, mode prompt.Mode) error {
 			bundle.TotalBytes, len(bundle.Untracked), len(bundle.Warnings))
 	}
 
-	pluginRoot, err := resolvePluginRoot()
+	pluginRoot, err := ResolvePluginRoot()
 	if err != nil {
 		return err
 	}
@@ -185,27 +184,4 @@ func parseTarget(args []string) (git.Target, error) {
 		t.Kind = git.TargetWorkingTree
 	}
 	return t, nil
-}
-
-func resolvePluginRoot() (string, error) {
-	if root := os.Getenv("CLAUDE_PLUGIN_ROOT"); root != "" {
-		return root, nil
-	}
-	exe, err := os.Executable()
-	if err != nil {
-		return "", xerrors.Internal("exe_path", "cannot determine binary path", err)
-	}
-	exe, _ = filepath.EvalSymlinks(exe)
-	dir := filepath.Dir(exe)
-	candidate := filepath.Dir(dir)
-	if _, err := os.Stat(filepath.Join(candidate, "prompts", "review.md")); err == nil {
-		return candidate, nil
-	}
-	repoRoot := filepath.Join(dir, "..", "..", "..")
-	candidate = filepath.Join(repoRoot, "plugins", "kizunax")
-	if _, err := os.Stat(filepath.Join(candidate, "prompts", "review.md")); err == nil {
-		return candidate, nil
-	}
-	return "", xerrors.Internal("plugin_root",
-		"cannot find plugin root (set CLAUDE_PLUGIN_ROOT)", nil)
 }

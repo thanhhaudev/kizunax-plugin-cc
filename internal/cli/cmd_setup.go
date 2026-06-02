@@ -12,6 +12,7 @@ import (
 	"github.com/thanhhaudev/kizunax-plugin-cc/internal/config"
 	xerrors "github.com/thanhhaudev/kizunax-plugin-cc/internal/errors"
 	"github.com/thanhhaudev/kizunax-plugin-cc/internal/provider"
+	"github.com/thanhhaudev/kizunax-plugin-cc/internal/state"
 )
 
 func runSetup(args []string) error {
@@ -50,8 +51,36 @@ func runSetup(args []string) error {
 	if web {
 		return setupWeb()
 	}
+	if hasFlag(args, "--enable-stop-gate") {
+		return setStopGateFlag(true)
+	}
+	if hasFlag(args, "--disable-stop-gate") {
+		return setStopGateFlag(false)
+	}
 
 	return setupWizard()
+}
+
+func setStopGateFlag(enable bool) error {
+	cwd, err := os.Getwd()
+	if err != nil {
+		return xerrors.Internal("getcwd", "cannot get cwd", err)
+	}
+	ws, err := state.Resolve(cwd)
+	if err != nil {
+		return err
+	}
+	current, _ := state.LoadStopGate(ws)
+	current.Enabled = enable
+	if err := state.SaveStopGate(ws, current); err != nil {
+		return err
+	}
+	status := "disabled"
+	if enable {
+		status = "enabled"
+	}
+	fmt.Printf("Kizunax stop-gate: %s for workspace %s\n", status, cwd)
+	return nil
 }
 
 func setupCheck(providerOverride string) error {
@@ -218,7 +247,6 @@ func ask(r *bufio.Reader, label, def string) string {
 	}
 	return line
 }
-
 
 func maskKey(k string) string {
 	if len(k) < 8 {
@@ -481,4 +509,3 @@ func setupClearPending() error {
 	fmt.Println("Cleared pending setup.")
 	return nil
 }
-
