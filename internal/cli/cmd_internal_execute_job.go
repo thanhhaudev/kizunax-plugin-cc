@@ -68,6 +68,11 @@ func executeJobBody(cwd string, ws state.WorkspaceDir, j *job.Job) error {
 	if err != nil {
 		return err
 	}
+	// Pin the picked key into the job record so `kizunax result` can read the
+	// usage cache for this exact key — config.Load rotates round-robin and a
+	// later Load may return a different key.
+	j.Request.KeyHash = usage.HashKey(cfg.APIKey)
+	j.Request.KeyMask = usage.MaskKey(cfg.APIKey)
 
 	bundle, err := diff.Collect(cwd, j.Request.Target)
 	if err != nil {

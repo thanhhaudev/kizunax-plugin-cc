@@ -36,6 +36,14 @@ type Request struct {
 	Target   git.Target `json:"target"`
 	Focus    string     `json:"focus,omitempty"`
 	Provider string     `json:"provider,omitempty"` // resolved provider name (openai|anthropic)
+	// KeyHash is the sha256 hex of the API key picked by the worker. Set after
+	// the worker resolves config so `kizunax result` can read the usage cache
+	// for the exact key that produced the review — config.Load rotates, so a
+	// later Load may return a different key.
+	KeyHash string `json:"key_hash,omitempty"`
+	// KeyMask is the display-safe mask of the same key (e.g. "kx_AbCd…").
+	// Persisted because the raw key is never stored.
+	KeyMask string `json:"key_mask,omitempty"`
 }
 
 type TokenUsage struct {

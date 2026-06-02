@@ -101,3 +101,43 @@ func TestAppendUsageFooter_FreshLow(t *testing.T) {
 		t.Errorf("footer should show live MaskKey(\"kx_LOW\") = \"kx_LOW…\":\n%s", got)
 	}
 }
+
+func TestAppendUsageFooterByHash_LookupBypassesConfigLoad(t *testing.T) {
+	ws := makeWS(t)
+	workerKey := "kx_WORKER"
+	seedCache(t, ws, workerKey,
+		&usage.Quota{Kind: "coding", Plan: "free", Used: 4996, Limit: 5000, Remaining: 4, ResetAt: time.Now().Add(3 * time.Minute)},
+		nil,
+		5*time.Second,
+	)
+
+	// Simulate `kizunax result` reading by the persisted KeyHash — what
+	// runResult does now. The actual API key is never seen here, only the hash
+	// and mask that were stored in job.Request.
+	hash := usage.HashKey(workerKey)
+	mask := usage.MaskKey(workerKey)
+
+	var buf bytes.Buffer
+	appendUsageFooterByHash(&buf, ws, hash, mask)
+	got := buf.String()
+	if got == "" {
+		t.Fatalf("by-hash lookup should write footer")
+	}
+	if !bytes.Contains([]byte(got), []byte("kx_WORK…")) {
+		t.Errorf("footer should carry the persisted mask:\n%s", got)
+	}
+
+	// A different key's hash → cache miss → silent.
+	var buf2 bytes.Buffer
+	appendUsageFooterByHash(&buf2, ws, usage.HashKey("kx_OTHER"), "kx_OTHE…")
+	if buf2.Len() != 0 {
+		t.Errorf("mismatched hash should be a cache miss, got: %q", buf2.String())
+	}
+
+	// Empty hash → silent.
+	var buf3 bytes.Buffer
+	appendUsageFooterByHash(&buf3, ws, "", "")
+	if buf3.Len() != 0 {
+		t.Errorf("empty hash should be silent, got: %q", buf3.String())
+	}
+}

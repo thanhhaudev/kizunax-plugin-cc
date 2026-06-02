@@ -61,6 +61,11 @@ func hashKey(apiKey string) string {
 	return hex.EncodeToString(h[:])
 }
 
+// HashKey is the exported entry point for callers outside this package (the
+// background job worker persists this hash so `kizunax result` can read the
+// cache by the exact key the worker used).
+func HashKey(apiKey string) string { return hashKey(apiKey) }
+
 // Fetch issues two concurrent requests (Coding + Credits) for one API key.
 // AuthFailed is set true ONLY when BOTH endpoints return 401/403; partial
 // failures surface as Quota.Err on the failing side.

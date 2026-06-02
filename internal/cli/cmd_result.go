@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/thanhhaudev/kizunax-plugin-cc/internal/config"
 	"github.com/thanhhaudev/kizunax-plugin-cc/internal/diff"
 	xerrors "github.com/thanhhaudev/kizunax-plugin-cc/internal/errors"
 	"github.com/thanhhaudev/kizunax-plugin-cc/internal/job"
@@ -71,10 +70,8 @@ func runResult(args []string) error {
 	}
 	fmt.Print(render.RenderReview(*j.Result, bundle, totalTokens, mode))
 
-	// Best-effort: load the resolved provider config used by the job so we can
-	// surface a low-quota footer for the key that ran this review.
-	if cfg, cfgErr := config.Load(j.Request.Provider); cfgErr == nil {
-		appendUsageFooter(os.Stdout, ws, cfg.APIKey)
-	}
+	// Bound the footer lookup to the exact key the worker used (persisted at
+	// run time). Avoids calling config.Load which rotates round-robin.
+	appendUsageFooterByHash(os.Stdout, ws, j.Request.KeyHash, j.Request.KeyMask)
 	return nil
 }

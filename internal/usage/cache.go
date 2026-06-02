@@ -85,8 +85,16 @@ func SaveCache(ws state.WorkspaceDir, s Snapshot) error {
 // LoadCachedEntry returns the cached KeyUsage for apiKey and a boolean
 // indicating freshness (FetchedAt within cacheTTL).
 func LoadCachedEntry(ws state.WorkspaceDir, apiKey string) (KeyUsage, bool) {
+	return LoadCachedEntryByHash(ws, hashKey(apiKey))
+}
+
+// LoadCachedEntryByHash is LoadCachedEntry indexed by a pre-computed sha256 hex
+// hash. Used by `kizunax result` so the lookup is bound to the exact key the
+// background worker used, not whichever key the current round-robin happens to
+// return.
+func LoadCachedEntryByHash(ws state.WorkspaceDir, keyHash string) (KeyUsage, bool) {
 	cache, _ := LoadCache(ws)
-	entry, ok := cache[hashKey(apiKey)]
+	entry, ok := cache[keyHash]
 	if !ok {
 		return KeyUsage{}, false
 	}
