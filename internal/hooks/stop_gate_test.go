@@ -25,7 +25,7 @@ type fakeDeps struct {
 func (f *fakeDeps) Collect(cwd string) (diff.Bundle, error) {
 	return f.bundle, f.bundleErr
 }
-func (f *fakeDeps) Run(ctx context.Context) (runner.Result, error) {
+func (f *fakeDeps) Run(ctx context.Context, bundle diff.Bundle) (runner.Result, error) {
 	f.runCalls++
 	return f.runResult, f.runErr
 }

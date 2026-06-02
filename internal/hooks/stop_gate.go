@@ -25,7 +25,7 @@ const (
 // tests. Production passes a value that calls diff.Collect / runner.Run.
 type StopGateDeps interface {
 	Collect(cwd string) (diff.Bundle, error)
-	Run(ctx context.Context) (runner.Result, error)
+	Run(ctx context.Context, bundle diff.Bundle) (runner.Result, error)
 }
 
 // StopGate executes the opt-in review-at-end-of-turn hook. Always returns 0:
@@ -60,7 +60,7 @@ func StopGate(in io.Reader, out, errOut io.Writer, ws state.WorkspaceDir, cwd st
 	ctx, cancel := context.WithTimeout(context.Background(), stopGateTimeout)
 	defer cancel()
 
-	result, runErr := deps.Run(ctx)
+	result, runErr := deps.Run(ctx, bundle)
 	if runErr != nil {
 		fmt.Fprintf(errOut, "[kizunax-hook stop-gate] error: %v — silent fail\n", runErr)
 		_ = state.SaveStopGate(ws, state.StopGateState{

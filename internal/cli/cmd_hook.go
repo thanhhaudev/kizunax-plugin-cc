@@ -62,7 +62,7 @@ func (d *stopGateProductionDeps) Collect(cwd string) (diff.Bundle, error) {
 	return diff.Collect(cwd, d.target)
 }
 
-func (d *stopGateProductionDeps) Run(ctx context.Context) (runner.Result, error) {
+func (d *stopGateProductionDeps) Run(ctx context.Context, bundle diff.Bundle) (runner.Result, error) {
 	cfg, err := config.Load("")
 	if err != nil {
 		return runner.Result{}, err
@@ -72,10 +72,6 @@ func (d *stopGateProductionDeps) Run(ctx context.Context) (runner.Result, error)
 		return runner.Result{}, err
 	}
 	p, err := buildProvider(cfg)
-	if err != nil {
-		return runner.Result{}, err
-	}
-	bundle, err := diff.Collect(d.cwd, d.target)
 	if err != nil {
 		return runner.Result{}, err
 	}
