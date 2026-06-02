@@ -74,24 +74,29 @@ func setupCheck(providerOverride string) error {
 		fmt.Printf("Status: ✗ %v\n", err)
 		return nil
 	}
+	file = config.MigrateLegacy(file)
 
-	// Determine which providers to probe.
-	var providers []string
-	if providerOverride != "" {
-		providers = []string{providerOverride}
-	} else {
-		providers = configuredProviders(file)
-	}
-
-	if len(providers) == 0 {
-		fmt.Println("Status: ✗ no providers configured")
+	if len(file.APIKeys) == 0 {
+		fmt.Println("Status: ✗ no API keys configured")
 		fmt.Println("Run /kizunax:setup to add one.")
 		return nil
 	}
 
-	fmt.Printf("Default provider: %s\n", config.MigrateLegacy(file).DefaultProvider)
+	fmt.Printf("Keys:        %d configured (%s)\n", len(file.APIKeys), maskKeys(file.APIKeys))
+	rotation := file.Rotation
+	if rotation == "" {
+		rotation = config.RotationRoundRobin
+	}
+	fmt.Printf("Rotation:    %s\n", rotation)
+	fmt.Printf("OpenAI model:    %s\n", firstNonEmptyCheck(file.OpenAIModel, config.DefaultOpenAIModel))
+	fmt.Printf("Anthropic model: %s\n", firstNonEmptyCheck(file.AnthropicModel, config.DefaultAnthropicModel))
 	fmt.Println()
 
+	// Probe the requested provider (or both if no override).
+	providers := []string{providerOverride}
+	if providerOverride == "" {
+		providers = []string{"openai", "anthropic"}
+	}
 	for _, name := range providers {
 		fmt.Printf("[%s]\n", name)
 		cfg, err := config.Load(name)
@@ -119,133 +124,89 @@ func setupCheck(providerOverride string) error {
 	return nil
 }
 
+// maskKeys renders the first three keys as masked tokens, eliding the rest.
+func maskKeys(keys []string) string {
+	parts := make([]string, 0, 3)
+	for i, k := range keys {
+		if i >= 3 {
+			parts = append(parts, fmt.Sprintf("…+%d more", len(keys)-3))
+			break
+		}
+		parts = append(parts, maskKey(k))
+	}
+	return strings.Join(parts, ", ")
+}
+
+func firstNonEmptyCheck(values ...string) string {
+	for _, v := range values {
+		if v != "" {
+			return v
+		}
+	}
+	return ""
+}
+
 func setupWizard() error {
 	fmt.Println("Kizunax interactive setup")
 	fmt.Println("(Press Enter to accept defaults in [brackets].)")
 	fmt.Println()
 
-	file, _ := config.LoadFile()
-	hadExisting := file.OpenAI != nil || file.Anthropic != nil || file.Provider != ""
-	file = config.MigrateLegacy(file)
-
 	reader := bufio.NewReader(os.Stdin)
+	existing, _ := config.LoadFile()
+	existing = config.MigrateLegacy(existing)
 
-	if hadExisting {
-		if !askYesNo(reader, "Existing config found. Reconfigure?", false) {
-			fmt.Println("Aborted.")
-			return nil
-		}
-	}
+	hadKeys := len(existing.APIKeys) > 0
 
-	// --- OpenAI ---
-	if askYesNo(reader, "Configure openai provider?", true) {
-		entry := config.ProviderEntry{}
-		if file.OpenAI != nil {
-			entry = *file.OpenAI
-		}
-		if entry.BaseURL == "" {
-			entry.BaseURL = config.DefaultOpenAIBaseURL
-		}
-		if entry.Model == "" {
-			entry.Model = config.DefaultOpenAIModel
-		}
-		entry.BaseURL = ask(reader, "  Base URL", entry.BaseURL)
-		entry.Model = ask(reader, "  Model", entry.Model)
-		key := promptKey(reader, "  API key", entry.APIKey)
-		if key == "" {
-			return xerrors.User("empty_key", "API key required for openai", "")
-		}
-		entry.APIKey = key
-		file.OpenAI = &entry
+	fmt.Println("Paste one or more KizunaX API keys, one per line.")
+	if hadKeys {
+		fmt.Printf("(Currently saved: %d key(s). Press Enter on a blank line to keep them.)\n", len(existing.APIKeys))
 	} else {
-		file.OpenAI = nil
+		fmt.Println("(At least one is required. End input with an empty line.)")
+	}
+	var keys []string
+	seen := map[string]bool{}
+	for {
+		line, _ := reader.ReadString('\n')
+		line = strings.TrimSpace(line)
+		if line == "" {
+			break
+		}
+		if !seen[line] {
+			seen[line] = true
+			keys = append(keys, line)
+		}
+	}
+	if len(keys) == 0 && hadKeys {
+		keys = existing.APIKeys
+	}
+	if len(keys) == 0 {
+		return xerrors.User("no_keys", "no API keys entered", "")
 	}
 
-	// --- Anthropic ---
-	if askYesNo(reader, "Configure anthropic provider?", true) {
-		entry := config.ProviderEntry{}
-		if file.Anthropic != nil {
-			entry = *file.Anthropic
-		}
-		if entry.BaseURL == "" {
-			entry.BaseURL = config.DefaultAnthropicBaseURL
-		}
-		if entry.Model == "" {
-			entry.Model = config.DefaultAnthropicModel
-		}
-		entry.BaseURL = ask(reader, "  Base URL", entry.BaseURL)
-		entry.Model = ask(reader, "  Model", entry.Model)
+	openaiModel := ask(reader, "OpenAI-compat model", firstNonEmptyCheck(existing.OpenAIModel, config.DefaultOpenAIModel))
+	anthropicModel := ask(reader, "Anthropic-compat model", firstNonEmptyCheck(existing.AnthropicModel, config.DefaultAnthropicModel))
 
-		var key string
-		if file.OpenAI != nil && file.OpenAI.APIKey != "" {
-			if askYesNo(reader, "  Use same API key as openai?", true) {
-				key = file.OpenAI.APIKey
-			}
-		}
-		if key == "" {
-			key = promptKey(reader, "  API key", entry.APIKey)
-		}
-		if key == "" {
-			return xerrors.User("empty_key", "API key required for anthropic", "")
-		}
-		entry.APIKey = key
-		file.Anthropic = &entry
-	} else {
-		file.Anthropic = nil
+	out := config.File{
+		APIKeys:        keys,
+		Rotation:       config.RotationRoundRobin,
+		OpenAIModel:    openaiModel,
+		AnthropicModel: anthropicModel,
+		Temperature:    existing.Temperature,
+		MaxTokens:      existing.MaxTokens,
 	}
-
-	// --- Default provider ---
-	switch {
-	case file.OpenAI != nil && file.Anthropic != nil:
-		def := file.DefaultProvider
-		if def != "openai" && def != "anthropic" {
-			def = "openai"
-		}
-		choice := ask(reader, "Default provider [openai|anthropic]", def)
-		if choice != "openai" && choice != "anthropic" {
-			return xerrors.User("bad_default",
-				fmt.Sprintf("invalid default provider %q", choice),
-				"choose openai or anthropic")
-		}
-		file.DefaultProvider = choice
-	case file.OpenAI != nil:
-		file.DefaultProvider = "openai"
-	case file.Anthropic != nil:
-		file.DefaultProvider = "anthropic"
-	default:
-		return xerrors.User("no_provider", "no provider configured", "")
-	}
-
-	if err := config.Save(file); err != nil {
+	if err := config.Save(out); err != nil {
 		return xerrors.Internal("save_config", "cannot save config", err)
 	}
 
 	path, _ := config.Path()
 	fmt.Println()
 	fmt.Printf("✓ Saved %s (mode 0600)\n", path)
-	fmt.Printf("Default provider: %s\n", file.DefaultProvider)
-	if file.OpenAI != nil {
-		fmt.Printf("  openai:    model=%s, key=%s\n", file.OpenAI.Model, maskKey(file.OpenAI.APIKey))
-	}
-	if file.Anthropic != nil {
-		fmt.Printf("  anthropic: model=%s, key=%s\n", file.Anthropic.Model, maskKey(file.Anthropic.APIKey))
-	}
+	fmt.Printf("Keys: %d\n", len(keys))
+	fmt.Printf("Rotation: %s\n", config.RotationRoundRobin)
+	fmt.Printf("Models: openai=%s, anthropic=%s\n", openaiModel, anthropicModel)
 	fmt.Println()
 	fmt.Println("Next: try /kizunax:review on a repo with uncommitted changes.")
-	fmt.Println("Switch provider on the fly: kizunax review --provider anthropic")
 	return nil
-}
-
-func configuredProviders(file config.File) []string {
-	migrated := config.MigrateLegacy(file)
-	var out []string
-	if migrated.OpenAI != nil {
-		out = append(out, "openai")
-	}
-	if migrated.Anthropic != nil {
-		out = append(out, "anthropic")
-	}
-	return out
 }
 
 func ask(r *bufio.Reader, label, def string) string {
@@ -258,33 +219,6 @@ func ask(r *bufio.Reader, label, def string) string {
 	return line
 }
 
-func askYesNo(r *bufio.Reader, label string, defaultYes bool) bool {
-	suffix := "[y/N]"
-	if defaultYes {
-		suffix = "[Y/n]"
-	}
-	fmt.Printf("%s %s: ", label, suffix)
-	line, _ := r.ReadString('\n')
-	line = strings.ToLower(strings.TrimSpace(line))
-	if line == "" {
-		return defaultYes
-	}
-	return line == "y" || line == "yes"
-}
-
-func promptKey(r *bufio.Reader, label, existing string) string {
-	suffix := ""
-	if existing != "" {
-		suffix = " (Enter to keep existing)"
-	}
-	fmt.Printf("%s%s: ", label, suffix)
-	line, _ := r.ReadString('\n')
-	key := strings.TrimSpace(line)
-	if key == "" && existing != "" {
-		return existing
-	}
-	return key
-}
 
 func maskKey(k string) string {
 	if len(k) < 8 {
@@ -313,140 +247,128 @@ func buildProvider(cfg config.Config) (provider.Provider, error) {
 }
 
 // setupJSON prints the current config inventory as JSON. No prompts.
-// has_api_key is the only field that exposes secret state — the key itself is never printed.
 func setupJSON() error {
 	path, _ := config.Path()
 
-	type providerSummary struct {
-		BaseURL   string `json:"base_url"`
-		Model     string `json:"model"`
-		HasAPIKey bool   `json:"has_api_key"`
-	}
 	out := struct {
-		ConfigPath      string                     `json:"config_path"`
-		DefaultProvider string                     `json:"default_provider"`
-		Providers       map[string]providerSummary `json:"providers"`
+		ConfigPath     string `json:"config_path"`
+		KeyCount       int    `json:"key_count"`
+		Rotation       string `json:"rotation"`
+		OpenAIModel    string `json:"openai_model"`
+		AnthropicModel string `json:"anthropic_model"`
 	}{
 		ConfigPath: path,
-		Providers:  map[string]providerSummary{},
+		Rotation:   config.RotationRoundRobin,
 	}
 
 	file, err := config.LoadFile()
 	if err == nil {
 		file = config.MigrateLegacy(file)
-		out.DefaultProvider = file.DefaultProvider
-		if file.OpenAI != nil {
-			out.Providers["openai"] = providerSummary{
-				BaseURL:   file.OpenAI.BaseURL,
-				Model:     file.OpenAI.Model,
-				HasAPIKey: file.OpenAI.APIKey != "",
-			}
-		}
-		if file.Anthropic != nil {
-			out.Providers["anthropic"] = providerSummary{
-				BaseURL:   file.Anthropic.BaseURL,
-				Model:     file.Anthropic.Model,
-				HasAPIKey: file.Anthropic.APIKey != "",
-			}
+		out.KeyCount = len(file.APIKeys)
+		if file.Rotation != "" {
+			out.Rotation = file.Rotation
 		}
 	}
+	out.OpenAIModel = firstNonEmptyCheck(file.OpenAIModel, config.DefaultOpenAIModel)
+	out.AnthropicModel = firstNonEmptyCheck(file.AnthropicModel, config.DefaultAnthropicModel)
 
 	enc := json.NewEncoder(os.Stdout)
 	enc.SetIndent("", "  ")
 	return enc.Encode(out)
 }
 
-// setupSave writes a provider entry into config.json without prompting.
-// Required flags: --provider, --base-url, --model, --api-key
-// Optional: --set-default, --reuse-api-key
+// setupSave writes a config without prompting.
+// Required:  one of --api-key "K1,K2,..." OR --reuse-keys
+// Optional:  --rotation round-robin | --openai-model M | --anthropic-model M
 func setupSave(args []string) error {
-	provider := flagValue(args, "--provider")
-	baseURL := flagValue(args, "--base-url")
-	model := flagValue(args, "--model")
-	apiKey := flagValue(args, "--api-key")
-	setDefault := hasFlag(args, "--set-default")
-	reuseKey := hasFlag(args, "--reuse-api-key")
+	keysArg := flagValue(args, "--api-key")
+	reuseKeys := hasFlag(args, "--reuse-keys")
+	rotation := flagValue(args, "--rotation")
+	openaiModel := flagValue(args, "--openai-model")
+	anthropicModel := flagValue(args, "--anthropic-model")
 
-	if provider != "openai" && provider != "anthropic" {
-		return xerrors.User("bad_provider",
-			fmt.Sprintf("--provider must be 'openai' or 'anthropic', got %q", provider),
+	existing, _ := config.LoadFile()
+	existing = config.MigrateLegacy(existing)
+
+	var keys []string
+	switch {
+	case keysArg != "":
+		keys = parseKeyList(keysArg)
+		if len(keys) == 0 {
+			return xerrors.User("bad_keys", "--api-key list is empty after trimming", "")
+		}
+	case reuseKeys:
+		if len(existing.APIKeys) == 0 {
+			return xerrors.User("no_existing_keys",
+				"--reuse-keys set but no existing keys on disk",
+				"pass --api-key K1,K2,...")
+		}
+		keys = existing.APIKeys
+	default:
+		return xerrors.User("missing_flag",
+			"--api-key K1,K2,... is required (or pass --reuse-keys to keep existing)",
 			"")
 	}
-	if baseURL == "" {
-		return xerrors.User("missing_flag", "--base-url is required", "")
+
+	if rotation == "" {
+		rotation = existing.Rotation
 	}
-	if model == "" {
-		return xerrors.User("missing_flag", "--model is required", "")
+	if rotation == "" {
+		rotation = config.RotationRoundRobin
 	}
-	if apiKey == "" && !reuseKey {
-		return xerrors.User("missing_flag",
-			"--api-key is required (or pass --reuse-api-key to keep the existing one)", "")
+	if rotation != config.RotationRoundRobin {
+		return xerrors.User("bad_rotation",
+			fmt.Sprintf("rotation %q not supported in v0.6.6", rotation),
+			"valid: round-robin")
+	}
+	if openaiModel == "" {
+		openaiModel = firstNonEmptyCheck(existing.OpenAIModel, config.DefaultOpenAIModel)
+	}
+	if anthropicModel == "" {
+		anthropicModel = firstNonEmptyCheck(existing.AnthropicModel, config.DefaultAnthropicModel)
 	}
 
-	file, _ := config.LoadFile()
-	file = config.MigrateLegacy(file)
-
-	if reuseKey {
-		existing := lookupExistingKey(file, provider)
-		if existing == "" {
-			return xerrors.User("no_existing_key",
-				fmt.Sprintf("--reuse-api-key set but no existing key for provider %q", provider),
-				"run again without --reuse-api-key and pass --api-key")
-		}
-		apiKey = existing
+	out := config.File{
+		APIKeys:        keys,
+		Rotation:       rotation,
+		OpenAIModel:    openaiModel,
+		AnthropicModel: anthropicModel,
+		Temperature:    existing.Temperature,
+		MaxTokens:      existing.MaxTokens,
 	}
-
-	entry := &config.ProviderEntry{
-		BaseURL: baseURL,
-		Model:   model,
-		APIKey:  apiKey,
-	}
-	switch provider {
-	case "openai":
-		file.OpenAI = entry
-	case "anthropic":
-		file.Anthropic = entry
-	}
-
-	if setDefault || file.DefaultProvider == "" {
-		file.DefaultProvider = provider
-	}
-
-	if err := config.Save(file); err != nil {
+	if err := config.Save(out); err != nil {
 		return xerrors.Internal("save_config", "cannot save config", err)
 	}
 
 	path, _ := config.Path()
-	fmt.Printf("Saved %s to %s (default=%s)\n", provider, path, file.DefaultProvider)
+	fmt.Printf("Saved %d key(s) to %s. Rotation: %s. Models: openai=%s, anthropic=%s.\n",
+		len(keys), path, rotation, openaiModel, anthropicModel)
 	return nil
 }
 
-// lookupExistingKey returns the on-disk API key for provider, or "" if none.
-func lookupExistingKey(file config.File, provider string) string {
-	switch provider {
-	case "openai":
-		if file.OpenAI != nil {
-			return file.OpenAI.APIKey
+// parseKeyList splits a comma-separated key string, trims each entry,
+// drops blanks, and dedupes while preserving input order.
+func parseKeyList(s string) []string {
+	seen := map[string]bool{}
+	var out []string
+	for _, raw := range strings.Split(s, ",") {
+		k := strings.TrimSpace(raw)
+		if k == "" || seen[k] {
+			continue
 		}
-	case "anthropic":
-		if file.Anthropic != nil {
-			return file.Anthropic.APIKey
-		}
+		seen[k] = true
+		out = append(out, k)
 	}
-	return ""
+	return out
 }
 
-// pendingProvider is one entry in the pending setup file.
-type pendingProvider struct {
-	Name    string `json:"name"`
-	BaseURL string `json:"base_url"`
-	Model   string `json:"model"`
-}
-
-// pendingFile is the on-disk shape of ~/.kizunax/.pending-setup.json.
+// pendingFile is the v0.6.6 pending setup record. Keys are intentionally NOT
+// stored here — the slash command writes provider/rotation/models, and the
+// user supplies keys at --apply time.
 type pendingFile struct {
-	DefaultProvider string            `json:"default_provider"`
-	Providers       []pendingProvider `json:"providers"`
+	Rotation       string `json:"rotation"`
+	OpenAIModel    string `json:"openai_model"`
+	AnthropicModel string `json:"anthropic_model"`
 }
 
 // pendingPath returns the absolute path to the pending setup file.
@@ -488,9 +410,8 @@ func deletePending() error {
 	return nil
 }
 
-// setupApply reads the pending setup file, resolves a key for each pending
-// provider from --key / --<provider>-key / --reuse, writes the final config,
-// and deletes the pending file when ALL pending providers were applied.
+// setupApply reads the pending setup file, applies keys (from --api-key or
+// --reuse), writes final config, and removes the pending file.
 func setupApply(args []string) error {
 	pf, err := loadPending()
 	if err != nil {
@@ -501,119 +422,54 @@ func setupApply(args []string) error {
 		}
 		return xerrors.User("bad_pending", fmt.Sprintf("cannot read pending file: %v", err), "")
 	}
-	if len(pf.Providers) == 0 {
-		return xerrors.User("empty_pending", "pending file lists no providers", "delete it with --clear-pending and re-run /kizunax:setup")
-	}
 
-	sharedKey := flagValue(args, "--key")
-	openaiKey := flagValue(args, "--openai-key")
-	anthropicKey := flagValue(args, "--anthropic-key")
+	keysArg := flagValue(args, "--api-key")
 	reuse := hasFlag(args, "--reuse")
 
-	if sharedKey == "" && openaiKey == "" && anthropicKey == "" && !reuse {
+	existing, _ := config.LoadFile()
+	existing = config.MigrateLegacy(existing)
+
+	var keys []string
+	switch {
+	case keysArg != "":
+		keys = parseKeyList(keysArg)
+		if len(keys) == 0 {
+			return xerrors.User("bad_keys", "--api-key list is empty after trimming", "")
+		}
+	case reuse:
+		if len(existing.APIKeys) == 0 {
+			return xerrors.User("no_existing_keys",
+				"--reuse set but no existing keys on disk",
+				"pass --api-key K1,K2,...")
+		}
+		keys = existing.APIKeys
+	default:
 		return xerrors.User("missing_flag",
-			"at least one of --key, --openai-key, --anthropic-key, or --reuse is required",
-			"")
+			"--api-key K1,K2,... is required (or --reuse to keep existing)", "")
 	}
 
-	file, _ := config.LoadFile()
-	file = config.MigrateLegacy(file)
-
-	var applied []string
-	var remaining []pendingProvider
-	for _, p := range pf.Providers {
-		key := ""
-		switch p.Name {
-		case "openai":
-			if openaiKey != "" {
-				key = openaiKey
-			}
-		case "anthropic":
-			if anthropicKey != "" {
-				key = anthropicKey
-			}
-		}
-		if key == "" && sharedKey != "" {
-			key = sharedKey
-		}
-		if key == "" && reuse {
-			key = lookupExistingKey(file, p.Name)
-			if key == "" {
-				remaining = append(remaining, p)
-				continue
-			}
-		}
-		if key == "" {
-			remaining = append(remaining, p)
-			continue
-		}
-
-		entry := &config.ProviderEntry{
-			BaseURL: p.BaseURL,
-			Model:   p.Model,
-			APIKey:  key,
-		}
-		switch p.Name {
-		case "openai":
-			file.OpenAI = entry
-		case "anthropic":
-			file.Anthropic = entry
-		default:
-			return xerrors.User("bad_provider",
-				fmt.Sprintf("pending file lists unknown provider %q", p.Name),
-				"")
-		}
-		applied = append(applied, p.Name)
+	rotation := pf.Rotation
+	if rotation == "" {
+		rotation = config.RotationRoundRobin
 	}
+	openaiModel := firstNonEmptyCheck(pf.OpenAIModel, existing.OpenAIModel, config.DefaultOpenAIModel)
+	anthropicModel := firstNonEmptyCheck(pf.AnthropicModel, existing.AnthropicModel, config.DefaultAnthropicModel)
 
-	if len(applied) == 0 {
-		return xerrors.User("no_key_resolved",
-			"no provider could be resolved with the given flags",
-			"pass --key, a --<provider>-key, or --reuse")
+	out := config.File{
+		APIKeys:        keys,
+		Rotation:       rotation,
+		OpenAIModel:    openaiModel,
+		AnthropicModel: anthropicModel,
+		Temperature:    existing.Temperature,
+		MaxTokens:      existing.MaxTokens,
 	}
-
-	// Update default to whichever pending provider was first AND got applied.
-	for _, p := range pf.Providers {
-		if contains(applied, p.Name) {
-			if pf.DefaultProvider == p.Name || file.DefaultProvider == "" {
-				file.DefaultProvider = p.Name
-				break
-			}
-		}
-	}
-	if file.DefaultProvider == "" && pf.DefaultProvider != "" {
-		file.DefaultProvider = pf.DefaultProvider
-	}
-
-	if err := config.Save(file); err != nil {
+	if err := config.Save(out); err != nil {
 		return xerrors.Internal("save_config", "cannot save config", err)
 	}
+	_ = deletePending()
 
-	if len(remaining) == 0 {
-		_ = deletePending()
-		path, _ := config.Path()
-		fmt.Printf("Applied %s to %s. Default provider: %s.\n",
-			strings.Join(applied, ", "), path, file.DefaultProvider)
-		return nil
-	}
-
-	// Some providers still need keys — keep pending file with only the unresolved ones.
-	pf.Providers = remaining
-	if pendingPathStr, err := pendingPath(); err == nil {
-		if data, mErr := json.MarshalIndent(pf, "", "  "); mErr == nil {
-			tmp := pendingPathStr + ".tmp"
-			if wErr := os.WriteFile(tmp, data, 0o600); wErr == nil {
-				_ = os.Rename(tmp, pendingPathStr)
-			}
-		}
-	}
-
-	var names []string
-	for _, p := range remaining {
-		names = append(names, p.Name)
-	}
-	fmt.Printf("Applied %s. Still pending: %s. Run --apply again with a key for those.\n",
-		strings.Join(applied, ", "), strings.Join(names, ", "))
+	path, _ := config.Path()
+	fmt.Printf("Applied %d key(s) to %s. Rotation: %s.\n", len(keys), path, rotation)
 	return nil
 }
 
@@ -626,12 +482,3 @@ func setupClearPending() error {
 	return nil
 }
 
-// contains is a small string-slice membership helper local to this file.
-func contains(haystack []string, needle string) bool {
-	for _, s := range haystack {
-		if s == needle {
-			return true
-		}
-	}
-	return false
-}

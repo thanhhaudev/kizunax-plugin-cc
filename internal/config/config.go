@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
+	"sync/atomic"
 
 	xerrors "github.com/thanhhaudev/kizunax-plugin-cc/internal/errors"
 )
@@ -16,16 +18,23 @@ type ProviderEntry struct {
 	APIKey  string `json:"api_key,omitempty"`
 }
 
-// File is the on-disk layout. Supports BOTH:
-//   1. New multi-provider format: openai{} + anthropic{} blocks + default_provider
-//   2. Legacy single-provider format: flat provider/base_url/model/api_key
-// Load() auto-detects and resolves.
+// File is the on-disk layout. v0.6.6+ format:
+//   { "api_keys": [...], "rotation": "round-robin",
+//     "openai_model": "...", "anthropic_model": "..." }
+// Legacy v0.6.5 fields below are READ ONLY for one-way migration via
+// MigrateLegacy. Save() never writes them (all have omitempty).
 type File struct {
+	APIKeys        []string `json:"api_keys,omitempty"`
+	Rotation       string   `json:"rotation,omitempty"`
+	OpenAIModel    string   `json:"openai_model,omitempty"`
+	AnthropicModel string   `json:"anthropic_model,omitempty"`
+
+	// Legacy v0.6.5 multi-provider format.
 	DefaultProvider string         `json:"default_provider,omitempty"`
 	OpenAI          *ProviderEntry `json:"openai,omitempty"`
 	Anthropic       *ProviderEntry `json:"anthropic,omitempty"`
 
-	// Legacy fields — kept for backward compat reading.
+	// Legacy v0.5 flat format.
 	Provider string `json:"provider,omitempty"`
 	BaseURL  string `json:"base_url,omitempty"`
 	Model    string `json:"model,omitempty"`
@@ -84,8 +93,30 @@ func LoadFile() (File, error) {
 	return f, nil
 }
 
+// keyCounter drives round-robin key selection across config.Load calls.
+var keyCounter atomic.Uint64
+
+func firstNonEmpty(values ...string) string {
+	for _, v := range values {
+		if v != "" {
+			return v
+		}
+	}
+	return ""
+}
+
+func pickKey(file File) string {
+	n := uint64(len(file.APIKeys))
+	if n == 0 {
+		return ""
+	}
+	i := keyCounter.Add(1) - 1
+	return file.APIKeys[i%n]
+}
+
 // Load resolves the effective config. providerOverride from --provider flag
-// takes highest precedence, then env, then file default, then "openai".
+// takes highest precedence, then env, then file default (openai). Each call
+// rotates to the next API key in the configured pool.
 func Load(providerOverride string) (Config, error) {
 	cfg := Defaults()
 
@@ -98,8 +129,8 @@ func Load(providerOverride string) (Config, error) {
 	if fileErr != nil {
 		return cfg, fileErr
 	}
+	file = MigrateLegacy(file)
 
-	// Warn if file mode is too permissive.
 	if info, statErr := os.Stat(path); statErr == nil {
 		if info.Mode().Perm()&0o077 != 0 {
 			fmt.Fprintf(os.Stderr, "warning: %s is world-readable (mode %o). Run: chmod 600 %s\n",
@@ -107,25 +138,19 @@ func Load(providerOverride string) (Config, error) {
 		}
 	}
 
-	// Determine which provider to use.
 	provider := resolveProviderName(providerOverride, file)
 	cfg.Provider = provider
 
-	// Look up provider entry (new format first, then legacy fallback).
-	entry := lookupProvider(file, provider)
-	if entry != nil {
-		cfg.BaseURL = entry.BaseURL
-		cfg.Model = entry.Model
-		cfg.APIKey = entry.APIKey
+	switch provider {
+	case "anthropic":
+		cfg.BaseURL = KizunaXAnthropicBaseURL
+		cfg.Model = firstNonEmpty(file.AnthropicModel, DefaultAnthropicModel)
+	default:
+		cfg.BaseURL = KizunaXOpenAIBaseURL
+		cfg.Model = firstNonEmpty(file.OpenAIModel, DefaultOpenAIModel)
 	}
 
-	// Apply defaults for empty fields based on chosen provider.
-	if cfg.BaseURL == "" {
-		cfg.BaseURL = defaultBaseURLFor(provider)
-	}
-	if cfg.Model == "" {
-		cfg.Model = defaultModelFor(provider)
-	}
+	cfg.APIKey = pickKey(file)
 
 	if file.Temperature != 0 {
 		cfg.Temperature = file.Temperature
@@ -134,7 +159,6 @@ func Load(providerOverride string) (Config, error) {
 		cfg.MaxTokens = file.MaxTokens
 	}
 
-	// Env overrides (after file, before final validation).
 	if v := os.Getenv("KIZUNAX_BASE_URL"); v != "" {
 		cfg.BaseURL = v
 	}
@@ -156,7 +180,8 @@ func Load(providerOverride string) (Config, error) {
 	return cfg, nil
 }
 
-// Save writes File in the new multi-provider format.
+// Save writes File in the v0.6.6 schema. Legacy fields are intentionally
+// blanked so old keys do not linger on disk.
 func Save(f File) error {
 	path, err := Path()
 	if err != nil {
@@ -165,6 +190,14 @@ func Save(f File) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return err
 	}
+	// Blank legacy fields before marshal so they're dropped via omitempty.
+	f.DefaultProvider = ""
+	f.OpenAI = nil
+	f.Anthropic = nil
+	f.Provider = ""
+	f.BaseURL = ""
+	f.Model = ""
+	f.APIKey = ""
 	data, err := json.MarshalIndent(f, "", "  ")
 	if err != nil {
 		return err
@@ -176,38 +209,54 @@ func Save(f File) error {
 	return os.Rename(tmp, path)
 }
 
-// MigrateLegacy converts a flat legacy file to the new multi-provider format
-// in memory. No-op if already in new format.
+// MigrateLegacy converts a v0.6.5 multi-provider or older flat file into the
+// v0.6.6 single-pool schema in memory. No-op if APIKeys is already populated.
 func MigrateLegacy(f File) File {
-	if f.OpenAI != nil || f.Anthropic != nil {
+	if len(f.APIKeys) > 0 {
+		if f.Rotation == "" {
+			f.Rotation = RotationRoundRobin
+		}
 		return f
 	}
-	if f.Provider == "" && f.BaseURL == "" && f.Model == "" && f.APIKey == "" {
-		return f
+
+	seen := map[string]bool{}
+	var keys []string
+	add := func(k string) {
+		k = strings.TrimSpace(k)
+		if k == "" || seen[k] {
+			return
+		}
+		seen[k] = true
+		keys = append(keys, k)
 	}
-	entry := &ProviderEntry{
-		BaseURL: f.BaseURL,
-		Model:   f.Model,
-		APIKey:  f.APIKey,
+	if f.OpenAI != nil {
+		add(f.OpenAI.APIKey)
 	}
-	switch f.Provider {
-	case "anthropic":
-		f.Anthropic = entry
-	default:
-		f.OpenAI = entry
+	if f.Anthropic != nil {
+		add(f.Anthropic.APIKey)
 	}
-	if f.DefaultProvider == "" {
-		if f.Provider != "" {
-			f.DefaultProvider = f.Provider
-		} else {
-			f.DefaultProvider = "openai"
+	add(f.APIKey) // legacy flat
+	f.APIKeys = keys
+
+	if f.OpenAIModel == "" {
+		switch {
+		case f.OpenAI != nil && f.OpenAI.Model != "":
+			f.OpenAIModel = f.OpenAI.Model
+		case f.Provider == "openai" && f.Model != "":
+			f.OpenAIModel = f.Model
 		}
 	}
-	// Clear legacy
-	f.Provider = ""
-	f.BaseURL = ""
-	f.Model = ""
-	f.APIKey = ""
+	if f.AnthropicModel == "" {
+		switch {
+		case f.Anthropic != nil && f.Anthropic.Model != "":
+			f.AnthropicModel = f.Anthropic.Model
+		case f.Provider == "anthropic" && f.Model != "":
+			f.AnthropicModel = f.Model
+		}
+	}
+	if f.Rotation == "" {
+		f.Rotation = RotationRoundRobin
+	}
 	return f
 }
 
@@ -218,64 +267,9 @@ func resolveProviderName(override string, file File) string {
 	if v := os.Getenv("KIZUNAX_PROVIDER"); v != "" {
 		return v
 	}
-	if file.DefaultProvider != "" {
+	if file.DefaultProvider == "openai" || file.DefaultProvider == "anthropic" {
 		return file.DefaultProvider
-	}
-	// New format file but no default? Pick first configured.
-	if file.OpenAI != nil {
-		return "openai"
-	}
-	if file.Anthropic != nil {
-		return "anthropic"
-	}
-	// Legacy
-	if file.Provider != "" {
-		return file.Provider
 	}
 	return "openai"
 }
 
-func lookupProvider(file File, provider string) *ProviderEntry {
-	switch provider {
-	case "openai":
-		if file.OpenAI != nil {
-			return file.OpenAI
-		}
-		// Legacy fallback: only if legacy file's provider matches (or is empty).
-		if file.Provider == "openai" || file.Provider == "" {
-			if file.APIKey != "" || file.BaseURL != "" || file.Model != "" {
-				return &ProviderEntry{
-					BaseURL: file.BaseURL,
-					Model:   file.Model,
-					APIKey:  file.APIKey,
-				}
-			}
-		}
-	case "anthropic":
-		if file.Anthropic != nil {
-			return file.Anthropic
-		}
-		if file.Provider == "anthropic" {
-			return &ProviderEntry{
-				BaseURL: file.BaseURL,
-				Model:   file.Model,
-				APIKey:  file.APIKey,
-			}
-		}
-	}
-	return nil
-}
-
-func defaultBaseURLFor(provider string) string {
-	if provider == "anthropic" {
-		return DefaultAnthropicBaseURL
-	}
-	return DefaultOpenAIBaseURL
-}
-
-func defaultModelFor(provider string) string {
-	if provider == "anthropic" {
-		return DefaultAnthropicModel
-	}
-	return DefaultOpenAIModel
-}

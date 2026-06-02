@@ -15,54 +15,53 @@ const setupFormHTML = `<!DOCTYPE html>
     fieldset { border: 1px solid #d0d7de; border-radius: 6px; padding: 1rem 1.25rem; margin: 1rem 0; }
     legend { padding: 0 0.5rem; font-weight: 600; }
     label { display: block; margin: 0.6rem 0 0.2rem; font-size: 0.9rem; }
-    input[type="text"], input[type="url"], input[type="password"] { width: 100%; padding: 0.45rem 0.6rem; border: 1px solid #d0d7de; border-radius: 6px; font-size: 0.95rem; box-sizing: border-box; }
-    input[type="checkbox"], input[type="radio"] { margin-right: 0.4rem; }
-    .row-check { font-weight: 600; }
+    input[type="text"], textarea, select { width: 100%; padding: 0.45rem 0.6rem; border: 1px solid #d0d7de; border-radius: 6px; font-size: 0.95rem; box-sizing: border-box; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+    textarea { min-height: 100px; resize: vertical; }
+    input[type="radio"] { margin-right: 0.4rem; }
     .hint { font-size: 0.8rem; color: #57606a; margin-top: 0.2rem; }
     .err-banner { background: #ffebe9; border: 1px solid #ffc1bc; color: #82071e; padding: 0.6rem 0.9rem; border-radius: 6px; margin: 0.5rem 0 1rem; }
+    .model-note { font-size: 0.8rem; color: #57606a; margin-top: 0.4rem; min-height: 1.2em; }
     button { background: #1f883d; color: #fff; border: 0; padding: 0.55rem 1.2rem; border-radius: 6px; font-size: 0.95rem; cursor: pointer; }
     button:hover { background: #1a7f37; }
-    .row-default { margin-top: 0.6rem; }
-    .row-default label { display: inline; margin-right: 1rem; font-weight: normal; }
+    button.secondary { background: #f6f8fa; color: #1f2328; border: 1px solid #d0d7de; }
+    button.secondary:hover { background: #eaeef2; }
   </style>
 </head>
 <body>
   <h1>Configure Kizunax</h1>
-  <p class="lede">Fill the form below and click Save. The CLI exits once your config is written.</p>
+  <p class="lede">Paste one or more API keys. The plugin rotates through them on each request so quota is spread across keys.</p>
 
   {{if .Error}}<div class="err-banner">{{.Error}}</div>{{end}}
 
   <form method="POST" action="/save?t={{.Token}}">
     <fieldset>
-      <legend>OpenAI-compatible</legend>
-      <label class="row-check"><input type="checkbox" name="openai_enabled" value="1" {{if .OpenAI.Enabled}}checked{{end}}> Configure this provider</label>
-      <label>Base URL</label>
-      <input type="url" name="openai_base_url" value="{{.OpenAI.BaseURL}}" placeholder="https://kizunax.io/api/coding/v1">
-      <label>Model</label>
-      <input type="text" name="openai_model" value="{{.OpenAI.Model}}" placeholder="coding/MiniMax-M2.7">
-      <label>API key</label>
-      <input type="password" name="openai_api_key" autocomplete="off" placeholder="{{if .OpenAI.HasKey}}(existing key — leave empty to keep){{else}}kx_...{{end}}">
+      <legend>API keys</legend>
+      <label>One key per line</label>
+      <textarea name="api_keys" placeholder="kx_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"></textarea>
+      <p class="hint">{{if gt .ExistingKeyCount 0}}{{.ExistingKeyCount}} key(s) currently saved. Leave empty to keep them.{{else}}At least one key is required.{{end}}</p>
     </fieldset>
 
     <fieldset>
-      <legend>Anthropic-compatible</legend>
-      <label class="row-check"><input type="checkbox" name="anthropic_enabled" value="1" {{if .Anthropic.Enabled}}checked{{end}}> Configure this provider</label>
-      <label>Base URL</label>
-      <input type="url" name="anthropic_base_url" value="{{.Anthropic.BaseURL}}" placeholder="https://kizunax.io/api/coding/anthropic/v1">
-      <label>Model</label>
-      <input type="text" name="anthropic_model" value="{{.Anthropic.Model}}" placeholder="MiniMax-M2.7-highspeed">
-      <label>API key</label>
-      <input type="password" name="anthropic_api_key" autocomplete="off" placeholder="{{if .Anthropic.HasKey}}(existing key — leave empty to keep){{else}}kx_...{{end}}">
-      <label style="font-weight: normal; margin-top: 0.5rem;"><input type="checkbox" id="same_key" name="same_key" value="1" {{if .SameKey}}checked{{end}}> Use the same API key as OpenAI-compatible</label>
+      <legend>Models</legend>
+      <p class="hint">Click <em>Load available models</em> to fetch the list using the first key above.</p>
+      <button type="button" class="secondary" id="load-models">Load available models</button>
+      <div class="model-note" id="model-note"></div>
+
+      <label>OpenAI-compat model</label>
+      <select name="openai_model" id="openai_model">
+        <option value="{{.OpenAIModel}}" selected>{{.OpenAIModel}}</option>
+      </select>
+
+      <label>Anthropic-compat model</label>
+      <select name="anthropic_model" id="anthropic_model">
+        <option value="{{.AnthropicModel}}" selected>{{.AnthropicModel}}</option>
+      </select>
     </fieldset>
 
     <fieldset>
-      <legend>Default provider</legend>
-      <div class="row-default">
-        <label><input type="radio" name="default_provider" value="openai" {{if eq .DefaultProvider "openai"}}checked{{end}}> openai</label>
-        <label><input type="radio" name="default_provider" value="anthropic" {{if eq .DefaultProvider "anthropic"}}checked{{end}}> anthropic</label>
-      </div>
-      <p class="hint">Used when a command does not pass --provider.</p>
+      <legend>Rotation</legend>
+      <label><input type="radio" name="rotation" value="round-robin" {{if eq .Rotation "round-robin"}}checked{{end}}> Round-robin (cycle through keys in order)</label>
+      <p class="hint">Random rotation will arrive in a later release.</p>
     </fieldset>
 
     <button type="submit">Save</button>
@@ -70,21 +69,79 @@ const setupFormHTML = `<!DOCTYPE html>
 
   <script>
     (function() {
-      var same = document.getElementById('same_key');
-      if (!same) return;
-      var openai = document.querySelector('input[name="openai_api_key"]');
-      var anthro = document.querySelector('input[name="anthropic_api_key"]');
-      function sync() {
-        if (same.checked) {
-          anthro.value = openai.value;
-          anthro.setAttribute('readonly', 'readonly');
-        } else {
-          anthro.removeAttribute('readonly');
+      var btn = document.getElementById('load-models');
+      var note = document.getElementById('model-note');
+      var keysArea = document.querySelector('textarea[name="api_keys"]');
+      var openaiSelect = document.getElementById('openai_model');
+      var anthropicSelect = document.getElementById('anthropic_model');
+      var token = {{.Token | printf "%q"}};
+
+      function firstKey() {
+        var raw = (keysArea.value || '').split('\n');
+        for (var i = 0; i < raw.length; i++) {
+          var k = raw[i].trim();
+          if (k) return k;
+        }
+        return '';
+      }
+
+      function fillSelect(sel, models, prev) {
+        sel.innerHTML = '';
+        var saw = false;
+        models.forEach(function(m) {
+          var opt = document.createElement('option');
+          opt.value = m;
+          opt.textContent = m;
+          if (m === prev) { opt.selected = true; saw = true; }
+          sel.appendChild(opt);
+        });
+        if (!saw && prev) {
+          var opt = document.createElement('option');
+          opt.value = prev;
+          opt.textContent = prev + ' (saved)';
+          opt.selected = true;
+          sel.insertBefore(opt, sel.firstChild);
         }
       }
-      same.addEventListener('change', sync);
-      openai.addEventListener('input', function() { if (same.checked) anthro.value = openai.value; });
-      sync();
+
+      function fetchModels(provider) {
+        var body = new URLSearchParams();
+        body.set('key', firstKey());
+        return fetch('/list-models?t=' + encodeURIComponent(token) + '&provider=' + provider, {
+          method: 'POST',
+          headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+          body: body.toString(),
+        }).then(function(r) {
+          return r.json().then(function(j) { return {ok: r.ok, body: j}; });
+        });
+      }
+
+      btn.addEventListener('click', function() {
+        var k = firstKey();
+        if (!k) { note.textContent = 'Paste at least one API key first.'; return; }
+        note.textContent = 'Loading...';
+        var prevOpenai = openaiSelect.value;
+        var prevAnthropic = anthropicSelect.value;
+        Promise.all([fetchModels('openai'), fetchModels('anthropic')]).then(function(results) {
+          var r1 = results[0], r2 = results[1];
+          var notes = [];
+          if (r1.ok) {
+            fillSelect(openaiSelect, r1.body.models || r1.body.fallback || [prevOpenai], prevOpenai);
+            if (r1.body.note) notes.push('openai: ' + r1.body.note);
+          } else {
+            notes.push('openai: ' + (r1.body && r1.body.error ? r1.body.error : 'failed'));
+          }
+          if (r2.ok) {
+            fillSelect(anthropicSelect, r2.body.models || r2.body.fallback || [prevAnthropic], prevAnthropic);
+            if (r2.body.note) notes.push('anthropic: ' + r2.body.note);
+          } else {
+            notes.push('anthropic: ' + (r2.body && r2.body.error ? r2.body.error : 'failed'));
+          }
+          note.textContent = notes.length ? notes.join('   ') : 'Models updated.';
+        }).catch(function(e) {
+          note.textContent = 'Failed: ' + e.message;
+        });
+      });
     })();
   </script>
 </body>

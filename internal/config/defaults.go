@@ -6,6 +6,13 @@ const (
 	DefaultOpenAIBaseURL    = "https://kizunax.io/api/coding/v1"
 	DefaultAnthropicBaseURL = "https://kizunax.io/api/coding/anthropic/v1"
 
+	// KizunaX endpoint constants — preferred over the Default* names at call
+	// sites that always target KizunaX (e.g. config.Load and the setup-web
+	// /list-models handler). The two pairs are intentionally equal strings;
+	// the alias makes intent obvious.
+	KizunaXOpenAIBaseURL    = DefaultOpenAIBaseURL
+	KizunaXAnthropicBaseURL = DefaultAnthropicBaseURL
+
 	DefaultOpenAIModel    = "coding/MiniMax-M2.7"
 	DefaultAnthropicModel = "MiniMax-M2.7-highspeed"
 
@@ -18,4 +25,6 @@ const (
 	MaxOutputTokens = 16384
 
 	HTTPTimeout = 120 * time.Second
+
+	RotationRoundRobin = "round-robin"
 )

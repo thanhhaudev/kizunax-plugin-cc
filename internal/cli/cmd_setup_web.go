@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"html/template"
@@ -19,6 +20,7 @@ import (
 
 	"github.com/thanhhaudev/kizunax-plugin-cc/internal/config"
 	xerrors "github.com/thanhhaudev/kizunax-plugin-cc/internal/errors"
+	"github.com/thanhhaudev/kizunax-plugin-cc/internal/provider"
 )
 
 // webIdleTimeout is how long the server waits for the user to submit before giving up.
@@ -30,19 +32,12 @@ const webPostGrace = 2 * time.Second
 
 // formData drives the HTML template.
 type formData struct {
-	Token           string
-	Error           string
-	DefaultProvider string
-	SameKey         bool
-	OpenAI          providerFormFields
-	Anthropic       providerFormFields
-}
-
-type providerFormFields struct {
-	Enabled bool
-	BaseURL string
-	Model   string
-	HasKey  bool
+	Token            string
+	Error            string
+	Rotation         string
+	OpenAIModel      string
+	AnthropicModel   string
+	ExistingKeyCount int
 }
 
 // setupWeb is the user-facing entry point: it picks a free port, generates a
@@ -165,6 +160,49 @@ func serveSetupWeb(ln net.Listener, token string) error {
 		default:
 		}
 	})
+	mux.HandleFunc("/list-models", func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Query().Get("t") != token {
+			http.NotFound(w, r)
+			return
+		}
+		if r.Method != http.MethodPost {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		if err := r.ParseForm(); err != nil {
+			writeListModelsError(w, "bad form")
+			return
+		}
+		prov := r.URL.Query().Get("provider")
+		apiKey := strings.TrimSpace(r.PostForm.Get("key"))
+		if apiKey == "" {
+			writeListModelsError(w, "paste at least one API key first")
+			return
+		}
+		var baseURL string
+		switch prov {
+		case "openai":
+			baseURL = config.KizunaXOpenAIBaseURL
+		case "anthropic":
+			baseURL = config.KizunaXAnthropicBaseURL
+		default:
+			writeListModelsError(w, "unknown provider")
+			return
+		}
+
+		ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
+		defer cancel()
+		models, err := provider.ListModels(ctx, baseURL, apiKey)
+		if err != nil {
+			if errors.Is(err, provider.ErrNoListModels) {
+				writeListModelsFallback(w, prov)
+				return
+			}
+			writeListModelsError(w, err.Error())
+			return
+		}
+		writeJSON(w, map[string]any{"models": models})
+	})
 
 	srv := &http.Server{Handler: mux}
 	go func() { _ = srv.Serve(ln) }()
@@ -209,46 +247,25 @@ func serveSetupWeb(ln net.Listener, token string) error {
 // loadInitialFormData reads the current config (if any) and returns initial form values.
 func loadInitialFormData() formData {
 	fd := formData{
-		DefaultProvider: "openai",
-		OpenAI: providerFormFields{
-			Enabled: true,
-			BaseURL: config.DefaultOpenAIBaseURL,
-			Model:   config.DefaultOpenAIModel,
-		},
-		Anthropic: providerFormFields{
-			Enabled: false,
-			BaseURL: config.DefaultAnthropicBaseURL,
-			Model:   config.DefaultAnthropicModel,
-		},
+		Rotation:       config.RotationRoundRobin,
+		OpenAIModel:    config.DefaultOpenAIModel,
+		AnthropicModel: config.DefaultAnthropicModel,
 	}
 	file, err := config.LoadFile()
 	if err != nil {
 		return fd
 	}
 	file = config.MigrateLegacy(file)
-	if file.DefaultProvider != "" {
-		fd.DefaultProvider = file.DefaultProvider
+	if file.Rotation != "" {
+		fd.Rotation = file.Rotation
 	}
-	if file.OpenAI != nil {
-		fd.OpenAI.Enabled = true
-		if file.OpenAI.BaseURL != "" {
-			fd.OpenAI.BaseURL = file.OpenAI.BaseURL
-		}
-		if file.OpenAI.Model != "" {
-			fd.OpenAI.Model = file.OpenAI.Model
-		}
-		fd.OpenAI.HasKey = file.OpenAI.APIKey != ""
+	if file.OpenAIModel != "" {
+		fd.OpenAIModel = file.OpenAIModel
 	}
-	if file.Anthropic != nil {
-		fd.Anthropic.Enabled = true
-		if file.Anthropic.BaseURL != "" {
-			fd.Anthropic.BaseURL = file.Anthropic.BaseURL
-		}
-		if file.Anthropic.Model != "" {
-			fd.Anthropic.Model = file.Anthropic.Model
-		}
-		fd.Anthropic.HasKey = file.Anthropic.APIKey != ""
+	if file.AnthropicModel != "" {
+		fd.AnthropicModel = file.AnthropicModel
 	}
+	fd.ExistingKeyCount = len(file.APIKeys)
 	return fd
 }
 
@@ -264,64 +281,45 @@ func renderForm(w http.ResponseWriter, tmpl *template.Template, token, errMsg st
 // and returns the first validation error (if any). It does NOT include API keys
 // in the returned formData — keys are pulled separately during write.
 func parseForm(values url.Values) (formData, string) {
-	openaiEnabled := values.Get("openai_enabled") == "1"
-	anthropicEnabled := values.Get("anthropic_enabled") == "1"
+	rotation := strings.TrimSpace(values.Get("rotation"))
+	if rotation == "" {
+		rotation = config.RotationRoundRobin
+	}
+	if rotation != config.RotationRoundRobin {
+		return formData{Rotation: config.RotationRoundRobin},
+			fmt.Sprintf("rotation %q not supported in this release.", rotation)
+	}
+	openaiModel := strings.TrimSpace(values.Get("openai_model"))
+	if openaiModel == "" {
+		openaiModel = config.DefaultOpenAIModel
+	}
+	anthropicModel := strings.TrimSpace(values.Get("anthropic_model"))
+	if anthropicModel == "" {
+		anthropicModel = config.DefaultAnthropicModel
+	}
 
 	fd := formData{
-		DefaultProvider: values.Get("default_provider"),
-		SameKey:         values.Get("same_key") == "1",
-		OpenAI: providerFormFields{
-			Enabled: openaiEnabled,
-			BaseURL: strings.TrimSpace(values.Get("openai_base_url")),
-			Model:   strings.TrimSpace(values.Get("openai_model")),
-		},
-		Anthropic: providerFormFields{
-			Enabled: anthropicEnabled,
-			BaseURL: strings.TrimSpace(values.Get("anthropic_base_url")),
-			Model:   strings.TrimSpace(values.Get("anthropic_model")),
-		},
-	}
-
-	if !openaiEnabled && !anthropicEnabled {
-		return fd, "Pick at least one provider to configure."
-	}
-	if openaiEnabled {
-		if err := validateProviderFields("OpenAI-compatible", fd.OpenAI.BaseURL, fd.OpenAI.Model); err != nil {
-			return fd, err.Error()
-		}
-	}
-	if anthropicEnabled {
-		if err := validateProviderFields("Anthropic-compatible", fd.Anthropic.BaseURL, fd.Anthropic.Model); err != nil {
-			return fd, err.Error()
-		}
-	}
-	switch fd.DefaultProvider {
-	case "openai":
-		if !openaiEnabled {
-			return fd, "Default provider is openai but OpenAI-compatible is not configured."
-		}
-	case "anthropic":
-		if !anthropicEnabled {
-			return fd, "Default provider is anthropic but Anthropic-compatible is not configured."
-		}
-	default:
-		return fd, "Pick a default provider (openai or anthropic)."
+		Rotation:       rotation,
+		OpenAIModel:    openaiModel,
+		AnthropicModel: anthropicModel,
 	}
 	return fd, ""
 }
 
-func validateProviderFields(label, baseURL, model string) error {
-	if baseURL == "" {
-		return fmt.Errorf("%s: base URL is required.", label)
+// parseKeysTextarea splits the textarea contents by newlines, trims each line,
+// drops blanks, dedupes while preserving order.
+func parseKeysTextarea(s string) []string {
+	seen := map[string]bool{}
+	var out []string
+	for _, raw := range strings.Split(s, "\n") {
+		k := strings.TrimSpace(raw)
+		if k == "" || seen[k] {
+			continue
+		}
+		seen[k] = true
+		out = append(out, k)
 	}
-	u, err := url.Parse(baseURL)
-	if err != nil || u.Scheme == "" || u.Host == "" {
-		return fmt.Errorf("%s: base URL is not a valid URL.", label)
-	}
-	if model == "" {
-		return fmt.Errorf("%s: model is required.", label)
-	}
-	return nil
+	return out
 }
 
 // writeConfigFromForm reads the (already-validated) form, merges with existing
@@ -330,52 +328,49 @@ func writeConfigFromForm(fd formData, values url.Values) error {
 	existing, _ := config.LoadFile()
 	existing = config.MigrateLegacy(existing)
 
+	keys := parseKeysTextarea(values.Get("api_keys"))
+	if len(keys) == 0 {
+		keys = existing.APIKeys
+	}
+	if len(keys) == 0 {
+		return errors.New("At least one API key is required.")
+	}
+
 	out := config.File{
-		DefaultProvider: fd.DefaultProvider,
+		APIKeys:        keys,
+		Rotation:       fd.Rotation,
+		OpenAIModel:    fd.OpenAIModel,
+		AnthropicModel: fd.AnthropicModel,
+		Temperature:    existing.Temperature,
+		MaxTokens:      existing.MaxTokens,
 	}
-
-	if fd.OpenAI.Enabled {
-		key := strings.TrimSpace(values.Get("openai_api_key"))
-		if key == "" {
-			if existing.OpenAI != nil {
-				key = existing.OpenAI.APIKey
-			}
-		}
-		if key == "" {
-			return errors.New("OpenAI-compatible: API key is required (no existing key to reuse).")
-		}
-		out.OpenAI = &config.ProviderEntry{
-			BaseURL: fd.OpenAI.BaseURL,
-			Model:   fd.OpenAI.Model,
-			APIKey:  key,
-		}
-	}
-
-	if fd.Anthropic.Enabled {
-		key := strings.TrimSpace(values.Get("anthropic_api_key"))
-		if key == "" && fd.SameKey && fd.OpenAI.Enabled {
-			// SameKey: take the openai key the form submitted (or the reused one).
-			if out.OpenAI != nil {
-				key = out.OpenAI.APIKey
-			}
-		}
-		if key == "" {
-			if existing.Anthropic != nil {
-				key = existing.Anthropic.APIKey
-			}
-		}
-		if key == "" {
-			return errors.New("Anthropic-compatible: API key is required (no existing key to reuse).")
-		}
-		out.Anthropic = &config.ProviderEntry{
-			BaseURL: fd.Anthropic.BaseURL,
-			Model:   fd.Anthropic.Model,
-			APIKey:  key,
-		}
-	}
-
 	if err := config.Save(out); err != nil {
 		return fmt.Errorf("cannot save config: %v", err)
 	}
 	return nil
+}
+
+func writeListModelsError(w http.ResponseWriter, msg string) {
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	w.WriteHeader(http.StatusBadRequest)
+	_ = json.NewEncoder(w).Encode(map[string]string{"error": msg})
+}
+
+func writeListModelsFallback(w http.ResponseWriter, prov string) {
+	var fallback []string
+	switch prov {
+	case "openai":
+		fallback = []string{config.DefaultOpenAIModel, "coding/kimi-k2.6"}
+	case "anthropic":
+		fallback = []string{config.DefaultAnthropicModel, "MiniMax-M2.5-highspeed"}
+	}
+	writeJSON(w, map[string]any{
+		"fallback": fallback,
+		"note":     "upstream does not list models — using built-in defaults.",
+	})
+}
+
+func writeJSON(w http.ResponseWriter, payload any) {
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	_ = json.NewEncoder(w).Encode(payload)
 }
