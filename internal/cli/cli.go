@@ -6,7 +6,7 @@ import (
 	xerrors "github.com/thanhhaudev/kizunax-plugin-cc/internal/errors"
 )
 
-const Version = "0.8.0"
+const Version = "0.9.0"
 
 func Dispatch(args []string) error {
 	if len(args) == 0 {
