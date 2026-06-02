@@ -4,6 +4,7 @@ import (
 	"flag"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/thanhhaudev/kizunax-plugin-cc/internal/schema"
@@ -59,8 +60,13 @@ func TestRenderHookWarning_CapsAtFive(t *testing.T) {
 	}
 	got := RenderHookWarning(schema.ReviewResult{Findings: findings})
 	if got == "" {
-		t.Errorf("expected output, got empty")
+		t.Fatalf("expected output, got empty")
 	}
-	// Count table data rows (lines starting with "> |" and not the header/separator):
-	// expect at most 5 finding rows + the "(N more)" overflow row.
+	if !strings.Contains(got, "(2 more)") {
+		t.Errorf("expected '(2 more)' overflow row, got:\n%s", got)
+	}
+	// Count finding rows: each high row mentions "issue" once.
+	if n := strings.Count(got, "| issue |"); n != 5 {
+		t.Errorf("expected 5 capped finding rows, got %d:\n%s", n, got)
+	}
 }
