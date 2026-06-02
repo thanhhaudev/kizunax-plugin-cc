@@ -1,6 +1,7 @@
 package job
 
 import (
+	"encoding/json"
 	"sort"
 	"strings"
 	"testing"
@@ -109,6 +110,35 @@ func TestList_NewestFirst(t *testing.T) {
 	}
 	if jobs[0].ID != newer.ID {
 		t.Errorf("expected newest first; got %s before %s", jobs[0].ID, jobs[1].ID)
+	}
+}
+
+func TestJob_SerializeNewFields(t *testing.T) {
+	now := time.Date(2026, 6, 2, 10, 0, 0, 0, time.UTC)
+	end := now.Add(7 * time.Second)
+	j := Job{
+		ID:          "T1",
+		Kind:        KindReview,
+		Status:      StatusCompleted,
+		SessionID:   "sess-abc",
+		CreatedAt:   now,
+		StartedAt:   now,
+		CompletedAt: &end,
+		DurationMs:  7000,
+		Request: Request{
+			Mode:     "standard",
+			Provider: "openai",
+			Model:    "coding/MiniMax-M2.7",
+		},
+	}
+	data, err := json.Marshal(j)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{`"sessionId":"sess-abc"`, `"durationMs":7000`, `"model":"coding/MiniMax-M2.7"`} {
+		if !strings.Contains(string(data), want) {
+			t.Errorf("missing %s in JSON: %s", want, data)
+		}
 	}
 }
 
