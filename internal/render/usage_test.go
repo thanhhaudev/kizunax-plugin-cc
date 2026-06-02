@@ -3,6 +3,7 @@ package render
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -157,5 +158,50 @@ func TestRenderUsage_PartialFail(t *testing.T) {
 	want := loadGolden(t, "usage_partial_fail.golden.md")
 	if got != want {
 		t.Errorf("mismatch:\n--- got ---\n%s\n--- want ---\n%s", got, want)
+	}
+}
+
+func TestRenderUsageFooter_NotLow(t *testing.T) {
+	ku := usage.KeyUsage{
+		KeyMask: "kx_AbCd…",
+		Coding:  &usage.Quota{Kind: "coding", Plan: "pro", Used: 1000, Limit: 50000, Remaining: 49000, ResetAt: FrozenNow.Add(20 * time.Minute)},
+		Credits: &usage.Quota{Kind: "credits", Plan: "pro", Used: 100, Limit: 100000, Remaining: 99900, ResetAt: FrozenNow.Add(27 * 24 * time.Hour)},
+	}
+	got := RenderUsageFooterAt(ku, FrozenNow)
+	if got != "" {
+		t.Errorf("expected empty footer when nothing low, got:\n%s", got)
+	}
+}
+
+func TestRenderUsageFooter_CodingLow(t *testing.T) {
+	ku := usage.KeyUsage{
+		KeyMask: "kx_EfGh…",
+		Coding:  &usage.Quota{Kind: "coding", Plan: "free", Used: 4900, Limit: 5000, Remaining: 100, ResetAt: FrozenNow.Add(3 * time.Minute)},
+		Credits: &usage.Quota{Kind: "credits", Plan: "free", Used: 8000, Limit: 100000, Remaining: 92000},
+	}
+	got := RenderUsageFooterAt(ku, FrozenNow)
+	if !strings.Contains(got, "⚠️") || !strings.Contains(got, "kx_EfGh…") {
+		t.Errorf("footer missing warn marker or key mask:\n%s", got)
+	}
+	if !strings.Contains(got, "Coding") {
+		t.Errorf("footer should mention which quota is low:\n%s", got)
+	}
+	if strings.Contains(got, "Credits") {
+		t.Errorf("footer should NOT mention non-low Credits:\n%s", got)
+	}
+}
+
+func TestRenderUsageFooter_BothLow(t *testing.T) {
+	ku := usage.KeyUsage{
+		KeyMask: "kx_LL…",
+		Coding:  &usage.Quota{Kind: "coding", Plan: "free", Used: 4900, Limit: 5000, Remaining: 100, ResetAt: FrozenNow.Add(3 * time.Minute)},
+		Credits: &usage.Quota{Kind: "credits", Plan: "free", Used: 95000, Limit: 100000, Remaining: 5000, ResetAt: FrozenNow.Add(2 * 24 * time.Hour)},
+	}
+	got := RenderUsageFooterAt(ku, FrozenNow)
+	if !strings.Contains(got, "Coding") || !strings.Contains(got, "Credits") {
+		t.Errorf("both quotas should appear when both low:\n%s", got)
+	}
+	if c := strings.Count(got, "⚠️"); c != 2 {
+		t.Errorf("expected 2 warn lines, got %d:\n%s", c, got)
 	}
 }

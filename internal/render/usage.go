@@ -136,3 +136,34 @@ func makeBar(percentUsed float64) string {
 	}
 	return strings.Repeat(barFilled, filled) + strings.Repeat(barEmpty, usageBarWidth-filled)
 }
+
+// RenderUsageFooter emits a markdown blockquote line per LOW quota for the
+// given key. Returns "" when nothing is low. Uses time.Now() as anchor.
+func RenderUsageFooter(ku usage.KeyUsage) string {
+	return RenderUsageFooterAt(ku, time.Now())
+}
+
+// RenderUsageFooterAt is RenderUsageFooter with an explicit "now" anchor.
+func RenderUsageFooterAt(ku usage.KeyUsage, now time.Time) string {
+	var b strings.Builder
+	if usage.IsLow(ku.Coding) {
+		writeFooterLine(&b, "Coding ", ku.Coding, ku.KeyMask, now)
+	}
+	if usage.IsLow(ku.Credits) {
+		writeFooterLine(&b, "Credits", ku.Credits, ku.KeyMask, now)
+	}
+	return b.String()
+}
+
+func writeFooterLine(b *strings.Builder, label string, q *usage.Quota, mask string, now time.Time) {
+	pct := 0.0
+	if q.Limit > 0 {
+		pct = float64(q.Used) / float64(q.Limit) * 100
+	}
+	bar := makeBar(pct)
+	used := abbrevNum(q.Used)
+	limit := abbrevNum(q.Limit)
+	reset := abbrevDur(q.ResetAt.Sub(now))
+	fmt.Fprintf(b, "> ⚠️ %s  %s  %d%%  %s / %s    %s — %s is low\n",
+		label, bar, int(math.Round(pct)), used, limit, reset, mask)
+}
