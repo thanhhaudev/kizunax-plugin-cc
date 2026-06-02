@@ -1,6 +1,6 @@
 {
   "name": "kizunax",
-  "version": "0.6.2",
+  "version": "0.6.3",
   "description": "AI code review for Claude Code via KizunaX or any OpenAI-compatible provider.",
   "author": {
     "name": "thanhhaudev"

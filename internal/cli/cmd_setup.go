@@ -21,6 +21,7 @@ func runSetup(args []string) error {
 	save := hasFlag(args, "--save")
 	apply := hasFlag(args, "--apply")
 	clearPending := hasFlag(args, "--clear-pending")
+	web := hasFlag(args, "--web")
 	providerOverride := flagValue(args, "--provider")
 
 	if check {
@@ -41,6 +42,9 @@ func runSetup(args []string) error {
 	}
 	if clearPending {
 		return setupClearPending()
+	}
+	if web {
+		return setupWeb()
 	}
 
 	return setupWizard()
