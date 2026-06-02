@@ -1,22 +1,21 @@
 ---
-description: Render the result of a finished Kizunax review job
-argument-hint: '<job-id>'
+description: Show the stored final output for a finished Kizunax job in this repository
+argument-hint: '[job-id-or-prefix]'
 disable-model-invocation: true
-allowed-tools: Bash(go:*), Bash(/Users/*), Read
+allowed-tools: Bash(${CLAUDE_PLUGIN_ROOT}/bin/kizunax:*)
 ---
 
-Show the full review output (findings, recommendations, next steps) of a completed Kizunax job.
+Pre-flight:
+- Verify `${CLAUDE_PLUGIN_ROOT}/bin/kizunax` exists. If not, tell the user: "Binary missing — run `/kizunax:setup` first to build it." Then stop.
 
-Steps:
+Run:
 
-1. Verify `${CLAUDE_PLUGIN_ROOT}/bin/kizunax` exists.
+```bash
+${CLAUDE_PLUGIN_ROOT}/bin/kizunax result $ARGUMENTS
+```
 
-2. Run:
-   ```bash
-   ${CLAUDE_PLUGIN_ROOT}/bin/kizunax result $ARGUMENTS
-   ```
-
-3. Return the command stdout verbatim. Do not paraphrase, fix, or summarize.
-
-If the job is still running → output asks you to check `/kizunax:status` again later.
-If the job failed → output prints the error reason and log path.
+Output rules:
+- Return the binary's output verbatim. Do not summarize, condense, or reformat.
+- No argument: shows the most recent job (any session).
+- A job id or unique prefix: pass through. Ambiguous prefix → error; render as-is.
+- Result spans ALL sessions (not just the current one) — users can inspect historical reviews.

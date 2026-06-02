@@ -8,6 +8,16 @@ import (
 	"github.com/thanhhaudev/kizunax-plugin-cc/internal/usage"
 )
 
+// appendUsageFooterIfNotQuiet is the entry point used by foreground review.
+// quiet=true suppresses the footer entirely (for pipe / CI use); otherwise it
+// delegates to appendUsageFooter with the same parameters.
+func appendUsageFooterIfNotQuiet(w io.Writer, quiet bool, ws state.WorkspaceDir, usedKey string) {
+	if quiet {
+		return
+	}
+	appendUsageFooter(w, ws, usedKey)
+}
+
 // appendUsageFooter writes a low-quota warning to w based on the cached
 // state for usedKey, if any. Cache miss, stale (>60s), or no-low → silent.
 // Never returns an error: usage is informational and must not affect callers.

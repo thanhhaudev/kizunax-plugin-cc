@@ -1,21 +1,22 @@
 ---
-description: Cancel a running Kizunax review job (SIGTERM the worker)
-argument-hint: '<job-id>'
+description: Cancel an active background Kizunax job in this repository
+argument-hint: '[job-id-or-prefix] [--all]'
 disable-model-invocation: true
-allowed-tools: Bash(go:*), Bash(/Users/*)
+allowed-tools: Bash(${CLAUDE_PLUGIN_ROOT}/bin/kizunax:*)
 ---
 
-Stop a running Kizunax background job.
+Pre-flight:
+- Verify `${CLAUDE_PLUGIN_ROOT}/bin/kizunax` exists. If not, tell the user: "Binary missing — run `/kizunax:setup` first to build it." Then stop.
 
-Steps:
+Run:
 
-1. Verify `${CLAUDE_PLUGIN_ROOT}/bin/kizunax` exists.
+```bash
+${CLAUDE_PLUGIN_ROOT}/bin/kizunax cancel $ARGUMENTS
+```
 
-2. Run:
-   ```bash
-   ${CLAUDE_PLUGIN_ROOT}/bin/kizunax cancel $ARGUMENTS
-   ```
-
-3. Return the command stdout verbatim.
-
-The worker process tree receives SIGTERM and the job record is marked `cancelled`. Already-finished jobs cannot be cancelled (the command will say so).
+Output rules:
+- Return the binary's output verbatim. Do not summarize.
+- No argument: cancel the only active job in the current session if exactly one exists.
+- A job id or unique prefix: cancel that specific job.
+- `--all` bypasses the session filter (search active jobs across all sessions).
+- Ambiguous prefix or no match: error rendered as-is.

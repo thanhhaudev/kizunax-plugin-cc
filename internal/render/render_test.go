@@ -5,6 +5,7 @@ import (
 	"flag"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -132,6 +133,32 @@ func TestRenderJobDetail_WithResult(t *testing.T) {
 	}
 	if !contains(got, "100") || !contains(got, "200") {
 		t.Error("expected token counts shown")
+	}
+}
+
+func TestRenderStatusList_IncludesActionsAndDurationColumns(t *testing.T) {
+	now := time.Date(2026, 6, 2, 10, 0, 0, 0, time.UTC)
+	end := now.Add(7 * time.Second)
+	jobs := []job.Job{
+		{
+			ID: "20260602T100000-abc", Kind: job.KindReview, Status: job.StatusCompleted,
+			CreatedAt: now, StartedAt: now, CompletedAt: &end, DurationMs: 7000,
+		},
+		{
+			ID: "20260602T100100-xyz", Kind: job.KindReview, Status: job.StatusRunning,
+			CreatedAt: now,
+		},
+	}
+	out := RenderStatusList(jobs)
+	for _, want := range []string{
+		"Duration", "Actions",
+		"7.0s",
+		"`/kizunax:result 20260602T100000-abc`",
+		"`/kizunax:cancel 20260602T100100-xyz`",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("RenderStatusList missing %q in: %s", want, out)
+		}
 	}
 }
 

@@ -2,7 +2,9 @@ package cli
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 
 	"github.com/thanhhaudev/kizunax-plugin-cc/internal/config"
@@ -32,7 +34,7 @@ func runHook(args []string) error {
 
 	switch args[0] {
 	case "session-cleanup":
-		hooks.SessionCleanup(os.Stdin, os.Stdout, os.Stderr, ws)
+		runHookSessionCleanup(ws, os.Stdin, os.Stdout, os.Stderr)
 		return nil
 
 	case "stop-gate":
@@ -82,4 +84,44 @@ func (d *stopGateProductionDeps) Run(ctx context.Context, bundle diff.Bundle) (r
 		Temperature: cfg.Temperature,
 		MaxTokens:   cfg.MaxTokens,
 	})
+}
+
+// hookInput models the JSON payload Claude Code sends on stdin for hook
+// events. Fields we don't need are ignored.
+type hookInput struct {
+	HookEvent string `json:"hook_event_name"`
+	SessionID string `json:"session_id"`
+	Cwd       string `json:"cwd"`
+}
+
+// runHookSessionCleanup handles the `hook session-cleanup` subcommand. On
+// SessionStart it writes KIZUNAX_SESSION_ID to CLAUDE_ENV_FILE so child
+// shells inherit the session ID. On SessionEnd (or any other event,
+// including missing/unparseable input) it delegates to the existing
+// sweep + log-purge body, using the workspace the dispatcher already
+// resolved from process cwd — this preserves v0.7 SessionEnd semantics.
+//
+// Hooks must never break Claude Code sessions: parse failures and env
+// write failures are logged to stderr but execution continues.
+func runHookSessionCleanup(ws state.WorkspaceDir, stdin io.Reader, stdout, stderr io.Writer) {
+	var input hookInput
+	if stdin != nil {
+		// Best-effort: empty / malformed stdin falls back to zero value.
+		data, err := io.ReadAll(stdin)
+		if err == nil && len(data) > 0 {
+			_ = json.Unmarshal(data, &input)
+		}
+	}
+
+	if input.HookEvent == "SessionStart" {
+		envFile := os.Getenv("CLAUDE_ENV_FILE")
+		if err := WriteSessionEnv(envFile, input.SessionID); err != nil {
+			fmt.Fprintf(stderr, "[kizunax-hook session-cleanup] WriteSessionEnv: %v\n", err)
+		}
+		// Do NOT sweep on SessionStart — jobs from a previous session
+		// may still be valid and the new session has just begun.
+		return
+	}
+
+	hooks.SessionCleanup(nil, stdout, stderr, ws)
 }

@@ -6,7 +6,7 @@ import (
 	xerrors "github.com/thanhhaudev/kizunax-plugin-cc/internal/errors"
 )
 
-const Version = "0.8.0"
+const Version = "0.9.0"
 
 func Dispatch(args []string) error {
 	if len(args) == 0 {
@@ -56,13 +56,13 @@ func printUsage() {
 	fmt.Printf(`kizunax %s — AI code review for Claude Code
 
 Usage:
-  kizunax review              [target-flags] [--focus TEXT] [--background] [--verbose]
-  kizunax adversarial-review  [target-flags] [--focus TEXT] [--background] [--verbose]
-  kizunax status              [<job-id>]
-  kizunax result              <job-id>
-  kizunax cancel              <job-id>
+  kizunax review              [target-flags] [--focus TEXT] [--quiet] [--verbose]
+  kizunax adversarial-review  [target-flags] [--focus TEXT] [--quiet] [--verbose]
+  kizunax status              [<job-id-or-prefix>]
+  kizunax result              <job-id-or-prefix>
+  kizunax cancel              <job-id-or-prefix>
   kizunax setup               [--check | --rebuild]
-  kizunax usage               [--provider <name>] [--refresh] [--verbose]
+  kizunax usage               [--provider <name>] [--verbose]
   kizunax version
 
 Target flags (pick at most one; default --working-tree):
@@ -75,17 +75,22 @@ Filter:
   --paths a.go,subdir/        Comma-separated path filter
 
 Execution:
-  --background                Spawn worker, return job ID immediately
   --provider <name>           Override default: openai | anthropic
   --focus "text"              Optional prompt focus hint
+  --quiet                     Suppress trailing usage warning footer (for pipe / CI)
   --verbose                   Print timing + tokens to stderr
+  --background                Deprecated since v0.9, no-op — async is delegated
+                              to Claude Code's Bash(run_in_background:true)
 
 Commands:
   review               Standard review
   adversarial-review   Skeptic stance focusing on attack surface and failure modes
-  status               List jobs in this workspace, or detail one
-  result               Render the result of a finished job
-  cancel               SIGTERM a running job's worker
+  status               List jobs in current session (or detail one by id/prefix);
+                       also sweeps orphaned legacy v0.8 jobs
+  result               Render the result of a finished job (accepts id prefix)
+  cancel               Cancel a legacy v0.8 running job by id or prefix (v0.9
+                       reviews run inline under Claude Code's Bash task, so
+                       there is no worker to signal for new runs)
   setup                Initialize config (provider, model, API key)
   usage                Show per-key quota (Coding Plan + Credits) with progress bars
   hook                 Internal — invoked by hooks.json (session-cleanup, stop-gate)

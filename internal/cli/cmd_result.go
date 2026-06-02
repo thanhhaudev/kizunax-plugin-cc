@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"errors"
 	"fmt"
 	"os"
 
@@ -13,10 +14,14 @@ import (
 )
 
 func runResult(args []string) error {
-	if len(args) < 1 {
-		return xerrors.User("missing_id", "usage: kizunax result <job-id>", "")
+	// Parse positional id (optional). Empty ref → newest job.
+	var id string
+	for _, a := range args {
+		if !startsWithFlag(a) && id == "" {
+			id = a
+			break
+		}
 	}
-	id := args[0]
 
 	cwd, err := os.Getwd()
 	if err != nil {
@@ -28,22 +33,40 @@ func runResult(args []string) error {
 		return xerrors.Internal("state_resolve", "cannot resolve workspace state dir", err)
 	}
 
-	j, err := job.Load(ws, id)
+	// Result lookup intentionally spans ALL sessions so users can inspect
+	// history regardless of which CC session originated the job.
+	all, err := job.List(ws)
 	if err != nil {
-		return xerrors.User("job_not_found",
-			fmt.Sprintf("no job with id %s", id),
-			"use `kizunax status` to list available jobs")
+		return xerrors.Internal("list_jobs", "cannot list jobs", err)
+	}
+
+	j, matchErr := job.MatchByPrefix(all, id)
+	if matchErr != nil {
+		switch {
+		case errors.Is(matchErr, job.ErrAmbiguousJobID):
+			return xerrors.User("job_ambiguous", matchErr.Error(), "use a longer id prefix")
+		case errors.Is(matchErr, job.ErrJobNotFound):
+			ref := id
+			if ref == "" {
+				ref = "(latest)"
+			}
+			return xerrors.User("job_not_found",
+				fmt.Sprintf("no job with id or prefix %q", ref),
+				"Use /kizunax:status --all to list.")
+		default:
+			return xerrors.Internal("job_lookup", "cannot match job id", matchErr)
+		}
 	}
 
 	switch j.Status {
 	case job.StatusRunning:
-		fmt.Printf("Job %s is still running. Try `kizunax status %s`.\n", id, id)
+		fmt.Printf("Job %s is still running. Try `kizunax status %s`.\n", j.ID, j.ID)
 		return nil
 	case job.StatusFailed:
-		fmt.Printf("Job %s failed:\n  %s\n\nLog: %s\n", id, j.Error, j.LogPath)
+		fmt.Printf("Job %s failed:\n  %s\n\nLog: %s\n", j.ID, j.Error, j.LogPath)
 		return nil
 	case job.StatusCancelled:
-		fmt.Printf("Job %s was cancelled.\n", id)
+		fmt.Printf("Job %s was cancelled.\n", j.ID)
 		return nil
 	}
 

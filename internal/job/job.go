@@ -36,6 +36,7 @@ type Request struct {
 	Target   git.Target `json:"target"`
 	Focus    string     `json:"focus,omitempty"`
 	Provider string     `json:"provider,omitempty"` // resolved provider name (openai|anthropic)
+	Model    string     `json:"model,omitempty"`    // pinned at spawn; worker uses this not config.Model
 	// KeyHash is the sha256 hex of the API key picked by the worker. Set after
 	// the worker resolves config so `kizunax result` can read the usage cache
 	// for the exact key that produced the review — config.Load rotates, so a
@@ -53,19 +54,21 @@ type TokenUsage struct {
 }
 
 type Job struct {
-	ID          string                `json:"id"`
-	Kind        Kind                  `json:"kind"`
-	Status      Status                `json:"status"`
-	PID         int                   `json:"pid,omitempty"`
-	CreatedAt   time.Time             `json:"createdAt"`
-	StartedAt   time.Time             `json:"startedAt"`
-	CompletedAt *time.Time            `json:"completedAt,omitempty"`
-	Request     Request               `json:"request"`
-	Result      *schema.ReviewResult  `json:"result,omitempty"`
-	Error       string                `json:"error,omitempty"`
-	LogPath     string                `json:"logPath"`
-	Warnings    []string              `json:"warnings,omitempty"`
-	Tokens      *TokenUsage           `json:"tokens,omitempty"`
+	ID          string               `json:"id"`
+	Kind        Kind                 `json:"kind"`
+	Status      Status               `json:"status"`
+	SessionID   string               `json:"sessionId,omitempty"` // CC session that spawned this job
+	PID         int                  `json:"pid,omitempty"`
+	CreatedAt   time.Time            `json:"createdAt"`
+	StartedAt   time.Time            `json:"startedAt"`
+	CompletedAt *time.Time           `json:"completedAt,omitempty"`
+	DurationMs  int64                `json:"durationMs,omitempty"` // CompletedAt - StartedAt, in ms
+	Request     Request              `json:"request"`
+	Result      *schema.ReviewResult `json:"result,omitempty"`
+	Error       string               `json:"error,omitempty"`
+	LogPath     string               `json:"logPath"`
+	Warnings    []string             `json:"warnings,omitempty"`
+	Tokens      *TokenUsage          `json:"tokens,omitempty"`
 }
 
 // NewID returns a sortable, time-prefixed unique ID:
@@ -114,4 +117,23 @@ func List(ws state.WorkspaceDir) ([]Job, error) {
 		return jobs[i].CreatedAt.After(jobs[j].CreatedAt)
 	})
 	return jobs, nil
+}
+
+// ListBySession returns jobs whose SessionID equals session, sorted newest-first.
+// Empty session returns all jobs (equivalent to List).
+func ListBySession(ws state.WorkspaceDir, session string) ([]Job, error) {
+	all, err := List(ws)
+	if err != nil {
+		return nil, err
+	}
+	if session == "" {
+		return all, nil
+	}
+	out := make([]Job, 0, len(all))
+	for _, j := range all {
+		if j.SessionID == session {
+			out = append(out, j)
+		}
+	}
+	return out, nil
 }

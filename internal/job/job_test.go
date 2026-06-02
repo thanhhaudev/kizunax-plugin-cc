@@ -1,6 +1,7 @@
 package job
 
 import (
+	"encoding/json"
 	"sort"
 	"strings"
 	"testing"
@@ -112,10 +113,109 @@ func TestList_NewestFirst(t *testing.T) {
 	}
 }
 
+func TestJob_SerializeNewFields(t *testing.T) {
+	now := time.Date(2026, 6, 2, 10, 0, 0, 0, time.UTC)
+	end := now.Add(7 * time.Second)
+	j := Job{
+		ID:          "T1",
+		Kind:        KindReview,
+		Status:      StatusCompleted,
+		SessionID:   "sess-abc",
+		CreatedAt:   now,
+		StartedAt:   now,
+		CompletedAt: &end,
+		DurationMs:  7000,
+		Request: Request{
+			Mode:     "standard",
+			Provider: "openai",
+			Model:    "coding/MiniMax-M2.7",
+		},
+	}
+	data, err := json.Marshal(j)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{`"sessionId":"sess-abc"`, `"durationMs":7000`, `"model":"coding/MiniMax-M2.7"`} {
+		if !strings.Contains(string(data), want) {
+			t.Errorf("missing %s in JSON: %s", want, data)
+		}
+	}
+}
+
 func makeJobsDir(ws state.WorkspaceDir) error {
 	return ensureDir(ws.JobsDir())
 }
 
 func ensureDir(p string) error {
 	return mkdirAll(p)
+}
+
+func TestListBySession_FiltersMatching(t *testing.T) {
+	ws := tempWorkspace(t)
+	mk := func(id, sess string) {
+		j := Job{ID: id, SessionID: sess, Kind: KindReview, Status: StatusCompleted, CreatedAt: time.Now()}
+		if err := Save(ws, j); err != nil {
+			t.Fatal(err)
+		}
+	}
+	mk("A", "sess-1")
+	mk("B", "sess-2")
+	mk("C", "sess-1")
+	mk("D", "") // legacy job without session
+
+	got, err := ListBySession(ws, "sess-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 2 {
+		t.Fatalf("got %d jobs, want 2", len(got))
+	}
+	for _, j := range got {
+		if j.SessionID != "sess-1" {
+			t.Errorf("unexpected sessionID: %s", j.SessionID)
+		}
+	}
+}
+
+func TestJob_DurationAndModel_SerializeRoundtrip(t *testing.T) {
+	ws := tempWorkspace(t)
+	now := time.Now()
+	end := now.Add(2500 * time.Millisecond)
+	j := Job{
+		ID: "X", Kind: KindReview, Status: StatusCompleted,
+		CreatedAt: now, StartedAt: now, CompletedAt: &end,
+		DurationMs: 2500,
+		Request:    Request{Mode: "standard", Model: "coding/MiniMax-M2.7"},
+	}
+	if err := Save(ws, j); err != nil {
+		t.Fatal(err)
+	}
+	got, err := Load(ws, "X")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.DurationMs != 2500 {
+		t.Errorf("DurationMs lost: got %d", got.DurationMs)
+	}
+	if got.Request.Model != "coding/MiniMax-M2.7" {
+		t.Errorf("Model lost: got %q", got.Request.Model)
+	}
+}
+
+func TestListBySession_EmptySession_ReturnsAll(t *testing.T) {
+	ws := tempWorkspace(t)
+	if err := Save(ws, Job{ID: "A", Kind: KindReview, CreatedAt: time.Now()}); err != nil {
+		t.Fatal(err)
+	}
+	if err := Save(ws, Job{ID: "B", SessionID: "sess", Kind: KindReview, CreatedAt: time.Now()}); err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := ListBySession(ws, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 2 {
+		t.Errorf("got %d, want all 2 when session is empty", len(got))
+	}
 }

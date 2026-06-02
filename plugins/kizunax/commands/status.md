@@ -1,22 +1,22 @@
 ---
-description: List Kizunax review jobs (or detail one) in this workspace
-argument-hint: '[<job-id>]'
+description: Show active and recent Kizunax jobs for this repository
+argument-hint: '[job-id-or-prefix] [--all]'
 disable-model-invocation: true
-allowed-tools: Bash(go:*), Bash(/Users/*), Read
+allowed-tools: Bash(${CLAUDE_PLUGIN_ROOT}/bin/kizunax:*)
 ---
 
-Show Kizunax background job status.
+Pre-flight:
+- Verify `${CLAUDE_PLUGIN_ROOT}/bin/kizunax` exists. If not, tell the user: "Binary missing — run `/kizunax:setup` first to build it." Then stop.
 
-Steps:
+Run:
 
-1. Verify `${CLAUDE_PLUGIN_ROOT}/bin/kizunax` exists. If not, instruct the user to run `/kizunax:setup` first.
+```bash
+${CLAUDE_PLUGIN_ROOT}/bin/kizunax status $ARGUMENTS
+```
 
-2. Run:
-   ```bash
-   ${CLAUDE_PLUGIN_ROOT}/bin/kizunax status $ARGUMENTS
-   ```
-
-3. Return the command stdout verbatim.
-
-No args → list all jobs in this workspace (newest first).
-With `<job-id>` → render detail for that job (kind, status, timing, tokens, log path).
+Output rules:
+- Return the binary's output verbatim. Do not summarize or condense.
+- If no argument: a Markdown table for the current session is rendered; preserve every column including the Actions column (which embeds `/kizunax:result <id>` and `/kizunax:cancel <id>` literals).
+- If a job id or unique prefix is passed: full job detail is rendered; pass through as-is.
+- `--all` bypasses the session filter and lists every job in the workspace.
+- Ambiguous id prefixes return an error suggesting a longer prefix; render that verbatim too.
