@@ -9,7 +9,10 @@ Configure Kizunax in a local browser form. The CLI starts a server on 127.0.0.1,
 Run:
 
 ```bash
-[ -f "${CLAUDE_PLUGIN_ROOT}/bin/kizunax" ] || { echo "Binary missing — run ./install.sh at the repo root."; exit 1; }
+if [ ! -f "${CLAUDE_PLUGIN_ROOT}/bin/kizunax" ]; then
+  echo "Binary missing — run ./install.sh at the repo root."
+  exit 1
+fi
 "${CLAUDE_PLUGIN_ROOT}/bin/kizunax" setup --web
 ```
 
