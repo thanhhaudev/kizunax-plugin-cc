@@ -76,7 +76,7 @@ func executeJobBody(cwd string, ws state.WorkspaceDir, j *job.Job) error {
 		return xerrors.Diff("empty_diff", "no changes to review for target", "")
 	}
 
-	pluginRoot, err := resolvePluginRoot()
+	pluginRoot, err := ResolvePluginRoot()
 	if err != nil {
 		return err
 	}
