@@ -45,9 +45,18 @@ type providerFormFields struct {
 	HasKey  bool
 }
 
-// setupWeb starts a localhost HTTP server with a configuration form, blocks
-// until the user submits or 5 minutes elapse, then exits.
+// setupWeb is the user-facing entry point: it picks a free port, generates a
+// one-shot token, kills any prior worker, prints the URL, opens the user's
+// browser, then spawns a detached worker child to actually serve the form.
+// Returns sub-100ms — the worker holds the server until save or timeout.
 func setupWeb() error {
+	noOpen := false
+	for _, a := range os.Args {
+		if a == "--no-open" {
+			noOpen = true
+		}
+	}
+
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		return xerrors.Internal("listen", "cannot bind to 127.0.0.1", err)
@@ -56,10 +65,38 @@ func setupWeb() error {
 
 	tokenBytes := make([]byte, 16)
 	if _, err := rand.Read(tokenBytes); err != nil {
+		_ = ln.Close()
 		return xerrors.Internal("rand", "cannot generate token", err)
 	}
 	token := hex.EncodeToString(tokenBytes)
 
+	_ = killOldSetupWebWorker()
+
+	url := fmt.Sprintf("http://127.0.0.1:%d/?t=%s", port, token)
+	fmt.Println("Open this in your browser to finish setup:")
+	fmt.Println(url)
+
+	if !noOpen {
+		openInBrowser(url)
+	}
+
+	pid, err := spawnSetupWebWorker(ln, token)
+	// Parent never serves on the listener — close its own ref so only the worker holds it.
+	_ = ln.Close()
+	if err != nil {
+		return err
+	}
+
+	if err := writeSetupWebPID(pid); err != nil {
+		fmt.Fprintf(os.Stderr, "warning: cannot write PID file: %v\n", err)
+	}
+	return nil
+}
+
+// serveSetupWeb runs the HTTP handlers against ln (created by the parent and
+// inherited from fd 3 in the worker). Returns when a save completes, the
+// idle timeout fires, or a signal arrives.
+func serveSetupWeb(ln net.Listener, token string) error {
 	formTmpl, err := template.New("form").Parse(setupFormHTML)
 	if err != nil {
 		return xerrors.Internal("parse_template", "cannot parse form template", err)
@@ -96,7 +133,6 @@ func setupWeb() error {
 			http.Error(w, "bad form", http.StatusBadRequest)
 			return
 		}
-		// If already saved (double-submit), ignore.
 		if savedFlag.Load() {
 			w.Header().Set("Content-Type", "text/html; charset=utf-8")
 			_, _ = w.Write([]byte(setupSuccessHTML))
@@ -125,7 +161,6 @@ func setupWeb() error {
 
 	srv := &http.Server{Handler: mux}
 	go func() { _ = srv.Serve(ln) }()
-	fmt.Printf("Open this in your browser to finish setup: http://127.0.0.1:%d/?t=%s\n", port, token)
 
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
@@ -133,7 +168,6 @@ func setupWeb() error {
 
 	select {
 	case <-saved:
-		// Give the browser time to render the success page before we close the listener.
 		time.Sleep(webPostGrace)
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
@@ -141,11 +175,9 @@ func setupWeb() error {
 		return nil
 	case <-time.After(webIdleTimeout):
 		_ = srv.Close()
-		fmt.Println("Setup cancelled (timeout).")
-		return xerrors.User("timeout", "setup timed out without a save", "re-run /kizunax:setup")
+		return xerrors.User("timeout", "setup timed out without a save", "")
 	case <-sigCh:
 		_ = srv.Close()
-		fmt.Println("Setup cancelled.")
 		return xerrors.User("cancelled", "setup cancelled by signal", "")
 	}
 }

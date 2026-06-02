@@ -6,7 +6,7 @@ import (
 	xerrors "github.com/thanhhaudev/kizunax-plugin-cc/internal/errors"
 )
 
-const Version = "0.6.3"
+const Version = "0.6.4"
 
 func Dispatch(args []string) error {
 	if len(args) == 0 {
@@ -29,6 +29,8 @@ func Dispatch(args []string) error {
 		return runCancel(args[1:])
 	case "internal-execute-job":
 		return runInternalExecuteJob(args[1:])
+	case "internal-setup-web-worker":
+		return runInternalSetupWebWorker(args[1:])
 	case "version", "--version", "-v":
 		fmt.Printf("kizunax %s\n", Version)
 		return nil
