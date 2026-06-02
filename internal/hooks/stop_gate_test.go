@@ -160,4 +160,50 @@ func TestStopGate_RunErrorSilentAndCooldownArmed(t *testing.T) {
 	if got.LastRunAt.IsZero() {
 		t.Errorf("LastRunAt should be armed even on error, to honor cooldown")
 	}
+	if len(got.LastHash) != 0 {
+		t.Errorf("LastHash must not be persisted on error (would poison dedupe), got len=%d", len(got.LastHash))
+	}
+}
+
+// Regression for adversarial-review finding: a transient Run error must not
+// poison the unchanged-diff dedupe cache. After cooldown elapses, the same
+// dirty diff must trigger Run again rather than silently skipping forever.
+func TestStopGate_ErrorThenSameHashRetriesAfterCooldown(t *testing.T) {
+	ws := makeWS(t)
+	// Pre-arm enabled state with NO previous hash/result.
+	_ = state.SaveStopGate(ws, state.StopGateState{Enabled: true})
+
+	bundle := diff.Bundle{Diff: "x"}
+
+	// First invocation: Run errors.
+	failingDeps := &fakeDeps{bundle: bundle, runErr: errors.New("boom")}
+	_ = StopGate(strings.NewReader(""), &bytes.Buffer{}, &bytes.Buffer{}, ws, ".", failingDeps)
+	if failingDeps.runCalls != 1 {
+		t.Fatalf("first Run call count: got %d want 1", failingDeps.runCalls)
+	}
+
+	// Roll LastRunAt back past the cooldown window to simulate elapsed time.
+	st, _ := state.LoadStopGate(ws)
+	st.LastRunAt = time.Now().Add(-2 * time.Minute)
+	_ = state.SaveStopGate(ws, st)
+
+	// Second invocation, same bundle: must call Run again.
+	retryDeps := &fakeDeps{
+		bundle: bundle,
+		runResult: runner.Result{
+			Review: schema.ReviewResult{
+				Findings: []schema.Finding{
+					{Severity: "high", File: "a.go", LineStart: 10, Title: "real bug"},
+				},
+			},
+		},
+	}
+	var stdout bytes.Buffer
+	_ = StopGate(strings.NewReader(""), &stdout, &bytes.Buffer{}, ws, ".", retryDeps)
+	if retryDeps.runCalls != 1 {
+		t.Errorf("retry Run call count: got %d want 1 (failed review must not poison dedupe)", retryDeps.runCalls)
+	}
+	if !strings.Contains(stdout.String(), "stop-gate") {
+		t.Errorf("expected warning rendered after successful retry, got:\n%s", stdout.String())
+	}
 }

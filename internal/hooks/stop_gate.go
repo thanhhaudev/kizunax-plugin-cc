@@ -63,9 +63,13 @@ func StopGate(in io.Reader, out, errOut io.Writer, ws state.WorkspaceDir, cwd st
 	result, runErr := deps.Run(ctx, bundle)
 	if runErr != nil {
 		fmt.Fprintf(errOut, "[kizunax-hook stop-gate] error: %v — silent fail\n", runErr)
-		_ = state.SaveStopGate(ws, state.StopGateState{
-			Enabled: true, LastHash: hash, LastRunAt: time.Now(),
-		})
+		// Arm cooldown but DO NOT persist LastHash: a failed review must not
+		// poison the unchanged-diff dedupe path. The next Stop event after the
+		// cooldown elapses should call Run again on the same diff.
+		prev, _ := state.LoadStopGate(ws)
+		prev.Enabled = true
+		prev.LastRunAt = time.Now()
+		_ = state.SaveStopGate(ws, prev)
 		return 0
 	}
 
