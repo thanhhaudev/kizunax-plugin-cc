@@ -1,6 +1,7 @@
 package state
 
 import (
+	"bytes"
 	"os"
 	"path/filepath"
 	"testing"
@@ -33,7 +34,7 @@ func TestStopGateState_RoundTrip(t *testing.T) {
 	if got.Enabled != want.Enabled {
 		t.Errorf("Enabled: got %v want %v", got.Enabled, want.Enabled)
 	}
-	if string(got.LastHash) != string(want.LastHash) {
+	if !bytes.Equal(got.LastHash, want.LastHash) {
 		t.Errorf("LastHash mismatch")
 	}
 	if !got.LastRunAt.Equal(want.LastRunAt) {

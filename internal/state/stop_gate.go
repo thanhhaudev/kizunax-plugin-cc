@@ -10,7 +10,7 @@ import (
 type StopGateState struct {
 	Enabled            bool           `json:"enabled"`
 	LastHash           []byte         `json:"lastHash,omitempty"`
-	LastRunAt          time.Time      `json:"lastRunAt,omitempty"`
+	LastRunAt          time.Time      `json:"lastRunAt"`
 	LastVerdictHadHigh bool           `json:"lastVerdictHadHigh,omitempty"`
 	LastResult         *CachedVerdict `json:"lastResult,omitempty"`
 }
