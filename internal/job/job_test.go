@@ -177,6 +177,31 @@ func TestListBySession_FiltersMatching(t *testing.T) {
 	}
 }
 
+func TestJob_DurationAndModel_SerializeRoundtrip(t *testing.T) {
+	ws := tempWorkspace(t)
+	now := time.Now()
+	end := now.Add(2500 * time.Millisecond)
+	j := Job{
+		ID: "X", Kind: KindReview, Status: StatusCompleted,
+		CreatedAt: now, StartedAt: now, CompletedAt: &end,
+		DurationMs: 2500,
+		Request:    Request{Mode: "standard", Model: "coding/MiniMax-M2.7"},
+	}
+	if err := Save(ws, j); err != nil {
+		t.Fatal(err)
+	}
+	got, err := Load(ws, "X")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.DurationMs != 2500 {
+		t.Errorf("DurationMs lost: got %d", got.DurationMs)
+	}
+	if got.Request.Model != "coding/MiniMax-M2.7" {
+		t.Errorf("Model lost: got %q", got.Request.Model)
+	}
+}
+
 func TestListBySession_EmptySession_ReturnsAll(t *testing.T) {
 	ws := tempWorkspace(t)
 	if err := Save(ws, Job{ID: "A", Kind: KindReview, CreatedAt: time.Now()}); err != nil {

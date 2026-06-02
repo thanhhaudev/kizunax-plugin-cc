@@ -43,11 +43,14 @@ func runInternalExecuteJob(args []string) error {
 	fmt.Fprintf(os.Stdout, "[worker] %s starting kind=%s target=%s\n",
 		j.ID, j.Kind, j.Request.Target.Label())
 
+	j.StartedAt = time.Now().UTC()
+
 	if err := executeJobBody(cwd, ws, &j); err != nil {
 		j.Status = job.StatusFailed
 		j.Error = err.Error()
 		completed := time.Now().UTC()
 		j.CompletedAt = &completed
+		j.DurationMs = completed.Sub(j.StartedAt).Milliseconds()
 		_ = job.Save(ws, j)
 		fmt.Fprintf(os.Stderr, "[worker] %s failed: %v\n", j.ID, err)
 		return err
@@ -56,6 +59,7 @@ func runInternalExecuteJob(args []string) error {
 	j.Status = job.StatusCompleted
 	completed := time.Now().UTC()
 	j.CompletedAt = &completed
+	j.DurationMs = completed.Sub(j.StartedAt).Milliseconds()
 	if err := job.Save(ws, j); err != nil {
 		fmt.Fprintf(os.Stderr, "[worker] cannot save final state: %v\n", err)
 	}
@@ -73,6 +77,12 @@ func executeJobBody(cwd string, ws state.WorkspaceDir, j *job.Job) error {
 	// later Load may return a different key.
 	j.Request.KeyHash = usage.HashKey(cfg.APIKey)
 	j.Request.KeyMask = usage.MaskKey(cfg.APIKey)
+	// Pin the model used by this worker so the on-disk record reflects reality
+	// even if config rotates. New jobs (spawned with Model set) keep their
+	// value; backfill only for legacy jobs missing the field.
+	if j.Request.Model == "" {
+		j.Request.Model = cfg.Model
+	}
 
 	bundle, err := diff.Collect(cwd, j.Request.Target)
 	if err != nil {
