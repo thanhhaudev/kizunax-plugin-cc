@@ -19,8 +19,10 @@ type ProviderEntry struct {
 }
 
 // File is the on-disk layout. v0.6.6+ format:
-//   { "api_keys": [...], "rotation": "round-robin",
-//     "openai_model": "...", "anthropic_model": "..." }
+//
+//	{ "api_keys": [...], "rotation": "round-robin",
+//	  "openai_model": "...", "anthropic_model": "..." }
+//
 // Legacy v0.6.5 fields below are READ ONLY for one-way migration via
 // MigrateLegacy. Save() never writes them (all have omitempty).
 type File struct {
@@ -274,3 +276,26 @@ func resolveProviderName(override string, file File) string {
 	return "anthropic"
 }
 
+// modelInputBudget is the per-model context-window minus a generous output
+// reserve. Source: KizunaX Coding Plan probe 2026-06-01 confirmed
+// context_window=131072 and max_output_tokens=16384 for MiniMax-M2.x and
+// Kimi-K2.6. Subtract output reserve → 114688 input budget. Anthropic-shape
+// model IDs reuse the same backend so the budget is identical.
+var modelInputBudget = map[string]int{
+	"coding/MiniMax-M2.7":    114688,
+	"coding/MiniMax-M2.5":    114688,
+	"coding/kimi-k2.6":       114688,
+	"MiniMax-M2.7-highspeed": 114688,
+	"MiniMax-M2.5-highspeed": 114688,
+}
+
+// ModelMaxInputTokens returns the input-token budget for a model. Unknown
+// models fall back to a conservative 100000 (smaller than any current
+// KizunaX-served model) so an oversize prompt fails fast rather than
+// silently exceeding the real cap.
+func ModelMaxInputTokens(model string) int {
+	if v, ok := modelInputBudget[model]; ok {
+		return v
+	}
+	return 100000
+}

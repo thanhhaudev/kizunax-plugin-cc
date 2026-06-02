@@ -32,3 +32,24 @@ func TestResolveProviderName_ExplicitOpenAIWins(t *testing.T) {
 		t.Errorf("resolveProviderName with explicit openai = %q, want openai", got)
 	}
 }
+
+func TestModelMaxInputTokens_KnownModels(t *testing.T) {
+	cases := map[string]int{
+		"coding/MiniMax-M2.7":    114688, // 131072 - 16384
+		"coding/kimi-k2.6":       114688,
+		"MiniMax-M2.7-highspeed": 114688,
+		"MiniMax-M2.5-highspeed": 114688,
+	}
+	for model, want := range cases {
+		if got := ModelMaxInputTokens(model); got != want {
+			t.Errorf("ModelMaxInputTokens(%q) = %d, want %d", model, got, want)
+		}
+	}
+}
+
+func TestModelMaxInputTokens_UnknownFallback(t *testing.T) {
+	got := ModelMaxInputTokens("some-future-model-3.5")
+	if got != 100000 {
+		t.Errorf("unknown model = %d, want 100000 fallback", got)
+	}
+}
