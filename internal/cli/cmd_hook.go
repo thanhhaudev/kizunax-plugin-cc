@@ -2,7 +2,9 @@ package cli
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 
 	"github.com/thanhhaudev/kizunax-plugin-cc/internal/config"
@@ -32,7 +34,9 @@ func runHook(args []string) error {
 
 	switch args[0] {
 	case "session-cleanup":
-		hooks.SessionCleanup(os.Stdin, os.Stdout, os.Stderr, ws)
+		if err := runHookSessionCleanup(os.Stdin, os.Stdout, os.Stderr); err != nil {
+			fmt.Fprintf(os.Stderr, "[kizunax-hook session-cleanup] %v\n", err)
+		}
 		return nil
 
 	case "stop-gate":
@@ -82,4 +86,62 @@ func (d *stopGateProductionDeps) Run(ctx context.Context, bundle diff.Bundle) (r
 		Temperature: cfg.Temperature,
 		MaxTokens:   cfg.MaxTokens,
 	})
+}
+
+// hookInput models the JSON payload Claude Code sends on stdin for hook
+// events. Fields we don't need are ignored.
+type hookInput struct {
+	HookEvent string `json:"hook_event_name"`
+	SessionID string `json:"session_id"`
+	Cwd       string `json:"cwd"`
+}
+
+// runHookSessionCleanup handles the `hook session-cleanup` subcommand. On
+// SessionStart it writes KIZUNAX_SESSION_ID to CLAUDE_ENV_FILE so child
+// shells inherit the session ID. On SessionEnd (or any other event,
+// including missing/unparseable input) it delegates to the existing
+// sweep + log-purge body.
+//
+// Hooks must never break Claude Code sessions: parse failures and env
+// write failures are logged to stderr but the function still returns nil.
+func runHookSessionCleanup(stdin io.Reader, stdout, stderr io.Writer) error {
+	var input hookInput
+	if stdin != nil {
+		// Best-effort: empty / malformed stdin falls back to zero value.
+		data, err := io.ReadAll(stdin)
+		if err == nil && len(data) > 0 {
+			_ = json.Unmarshal(data, &input)
+		}
+	}
+
+	if input.HookEvent == "SessionStart" {
+		envFile := os.Getenv("CLAUDE_ENV_FILE")
+		if err := WriteSessionEnv(envFile, input.SessionID); err != nil {
+			fmt.Fprintf(stderr, "session-cleanup: WriteSessionEnv: %v\n", err)
+		}
+		// Do NOT sweep on SessionStart — jobs from a previous session
+		// may still be valid and the new session has just begun.
+		return nil
+	}
+
+	return runSessionCleanupSweep(input.Cwd, stdout, stderr)
+}
+
+// runSessionCleanupSweep is the legacy session-cleanup body: resolve the
+// workspace, sweep orphan jobs, and delete logs older than 7 days. It is
+// called for SessionEnd and any unknown / missing event. Always returns
+// nil — hooks must not block Claude Code.
+func runSessionCleanupSweep(cwd string, stdout, stderr io.Writer) error {
+	if cwd == "" {
+		if wd, err := os.Getwd(); err == nil {
+			cwd = wd
+		}
+	}
+	ws, err := state.Resolve(cwd)
+	if err != nil {
+		fmt.Fprintf(stderr, "[kizunax-hook session-cleanup] state resolve failed: %v\n", err)
+		return nil
+	}
+	hooks.SessionCleanup(nil, stdout, stderr, ws)
+	return nil
 }
