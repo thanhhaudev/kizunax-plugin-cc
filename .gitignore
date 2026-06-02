@@ -3,3 +3,4 @@ plugins/kizunax/bin/kizunax
 *.test
 *.out
 /coverage.out
+.worktrees/
