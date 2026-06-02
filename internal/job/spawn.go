@@ -104,7 +104,7 @@ func Cancel(ws state.WorkspaceDir, id string) (Job, error) {
 func SweepOrphans(ws state.WorkspaceDir) {
 	jobs, _ := List(ws)
 	for _, j := range jobs {
-		if j.Status != StatusRunning || j.PID <= 0 {
+		if j.Status != StatusRunning || j.PID == 0 {
 			continue
 		}
 		proc, err := os.FindProcess(j.PID)
