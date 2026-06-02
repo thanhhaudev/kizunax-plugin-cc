@@ -207,3 +207,61 @@ func TestStopGate_ErrorThenSameHashRetriesAfterCooldown(t *testing.T) {
 		t.Errorf("expected warning rendered after successful retry, got:\n%s", stdout.String())
 	}
 }
+
+// A Run error must NOT clobber LastHash/LastResult from a previous successful
+// review. If the user reverts to a previously-reviewed diff after a transient
+// failure on a different diff, the cached warning for the prior success must
+// still render.
+func TestStopGate_ErrorPreservesPreviousSuccess(t *testing.T) {
+	ws := makeWS(t)
+
+	// Prior success on bundle "good".
+	priorBundle := diff.Bundle{Diff: "good"}
+	priorHash := hashBundle(priorBundle)
+	_ = state.SaveStopGate(ws, state.StopGateState{
+		Enabled:            true,
+		LastHash:           priorHash,
+		LastRunAt:          time.Now().Add(-2 * time.Minute), // past cooldown
+		LastVerdictHadHigh: true,
+		LastResult: &state.CachedVerdict{
+			Findings: []state.CachedFinding{
+				{Severity: "high", File: "good.go", Line: 1, Title: "prior finding"},
+			},
+		},
+	})
+
+	// User now has a DIFFERENT bundle and Run errors.
+	failingDeps := &fakeDeps{
+		bundle: diff.Bundle{Diff: "bad"},
+		runErr: errors.New("provider 500"),
+	}
+	_ = StopGate(strings.NewReader(""), &bytes.Buffer{}, &bytes.Buffer{}, ws, ".", failingDeps)
+
+	// State after error must still hold the prior success's hash and findings.
+	got, _ := state.LoadStopGate(ws)
+	if !bytes.Equal(got.LastHash, priorHash) {
+		t.Errorf("LastHash was overwritten on error: got len=%d want priorHash", len(got.LastHash))
+	}
+	if !got.LastVerdictHadHigh {
+		t.Errorf("LastVerdictHadHigh was lost on error")
+	}
+	if got.LastResult == nil || len(got.LastResult.Findings) != 1 || got.LastResult.Findings[0].Title != "prior finding" {
+		t.Errorf("LastResult lost on error: %+v", got.LastResult)
+	}
+
+	// Roll cooldown back to past so the next event can proceed.
+	got.LastRunAt = time.Now().Add(-2 * time.Minute)
+	_ = state.SaveStopGate(ws, got)
+
+	// Now user reverts to the prior-success bundle: hash match must trigger
+	// the cached render, proving the prior state survived the error.
+	revertDeps := &fakeDeps{bundle: priorBundle}
+	var stdout bytes.Buffer
+	_ = StopGate(strings.NewReader(""), &stdout, &bytes.Buffer{}, ws, ".", revertDeps)
+	if revertDeps.runCalls != 0 {
+		t.Errorf("Run called on reverted diff; expected cached render. runCalls=%d", revertDeps.runCalls)
+	}
+	if !strings.Contains(stdout.String(), "prior finding") {
+		t.Errorf("expected cached prior finding rendered, got:\n%s", stdout.String())
+	}
+}
