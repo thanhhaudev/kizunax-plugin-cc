@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/thanhhaudev/kizunax-plugin-cc/internal/config"
 	"github.com/thanhhaudev/kizunax-plugin-cc/internal/diff"
 	xerrors "github.com/thanhhaudev/kizunax-plugin-cc/internal/errors"
 	"github.com/thanhhaudev/kizunax-plugin-cc/internal/job"
@@ -69,5 +70,11 @@ func runResult(args []string) error {
 		totalTokens = j.Tokens.Total
 	}
 	fmt.Print(render.RenderReview(*j.Result, bundle, totalTokens, mode))
+
+	// Best-effort: load the resolved provider config used by the job so we can
+	// surface a low-quota footer for the key that ran this review.
+	if cfg, cfgErr := config.Load(j.Request.Provider); cfgErr == nil {
+		appendUsageFooter(os.Stdout, ws, cfg.APIKey)
+	}
 	return nil
 }

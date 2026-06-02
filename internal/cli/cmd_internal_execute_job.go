@@ -14,6 +14,7 @@ import (
 	"github.com/thanhhaudev/kizunax-plugin-cc/internal/render"
 	"github.com/thanhhaudev/kizunax-plugin-cc/internal/runner"
 	"github.com/thanhhaudev/kizunax-plugin-cc/internal/state"
+	"github.com/thanhhaudev/kizunax-plugin-cc/internal/usage"
 )
 
 // runInternalExecuteJob is the worker entry point spawned by SpawnBackground.
@@ -115,6 +116,18 @@ func executeJobBody(cwd string, ws state.WorkspaceDir, j *job.Job) error {
 	fmt.Fprintln(os.Stdout)
 	fmt.Fprintln(os.Stdout, "=== RENDERED REVIEW ===")
 	fmt.Fprint(os.Stdout, render.RenderReview(result.Review, bundle, result.TotalTokens, mode))
+
+	// Refresh usage cache so `kizunax result` sees a low-quota footer if needed.
+	// Synchronous-bounded within the worker process; the parent already exited.
+	if base, err := usage.DeriveBase(cfg.BaseURL); err == nil {
+		done := make(chan struct{})
+		usage.RefreshAsyncWithClient(nil, base, cfg.APIKey, ws, func() { close(done) })
+		select {
+		case <-done:
+		case <-time.After(6 * time.Second):
+			// timeout; abandon refresh, never block worker exit
+		}
+	}
 
 	return nil
 }
