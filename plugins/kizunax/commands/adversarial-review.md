@@ -24,6 +24,7 @@ Execution mode:
   - Working-tree (default): inspect `git status --short --untracked-files=all`, `git diff --shortstat --cached`, `git diff --shortstat`.
   - Branch (`--base <ref>`): `git diff --shortstat <ref>...HEAD`.
   - Commit (`--commit <sha>`): `git show --shortstat <sha>`.
+  - Range (`--from <a> --to <b>`): `git diff --shortstat <a>..<b>`.
   - Treat untracked files as reviewable.
   - Only conclude "nothing to review" when the relevant scope is genuinely empty.
   - Recommend wait only when the review is clearly tiny (1-2 files, no broader directory-sized change).
