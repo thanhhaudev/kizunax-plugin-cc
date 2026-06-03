@@ -42,9 +42,12 @@ type Prompt struct {
 
 const defaultSystem = "You are a senior code reviewer. Output ONLY valid JSON matching the schema provided in the user message. No prose, no code fences, no commentary outside the JSON object."
 
+const glossarySectionTemplate = "## Project glossary\n\n%s\n\n---\n\n%s"
+
 // Build assembles the user prompt by interpolating the chosen template
-// with target label, schema, diff bundle, and optional focus text.
-func Build(pluginRoot string, mode Mode, bundle diff.Bundle, schemaJSON, focus string) (Prompt, error) {
+// with target label, schema, diff bundle, optional focus text, and optional glossary.
+// When glossary is non-empty it is prepended to the system prompt.
+func Build(pluginRoot string, mode Mode, bundle diff.Bundle, schemaJSON, focus, glossary string) (Prompt, error) {
 	tmplPath := filepath.Join(pluginRoot, "prompts", mode.TemplateFile())
 	raw, err := os.ReadFile(tmplPath)
 	if err != nil {
@@ -58,7 +61,12 @@ func Build(pluginRoot string, mode Mode, bundle diff.Bundle, schemaJSON, focus s
 		"USER_FOCUS":    formatFocus(focus),
 	})
 
-	return Prompt{System: defaultSystem, User: user}, nil
+	system := defaultSystem
+	if strings.TrimSpace(glossary) != "" {
+		system = fmt.Sprintf(glossarySectionTemplate, glossary, defaultSystem)
+	}
+
+	return Prompt{System: system, User: user}, nil
 }
 
 func formatFocus(focus string) string {

@@ -22,6 +22,7 @@ type Result struct {
 type Options struct {
 	Mode        prompt.Mode
 	Focus       string
+	Glossary    string
 	Model       string
 	Temperature float64
 	MaxTokens   int
@@ -33,7 +34,7 @@ func Run(ctx context.Context, pluginRoot string, p provider.Provider, bundle dif
 		return Result{}, xerrors.Internal("load_schema", "cannot load review schema", err)
 	}
 
-	pr, err := prompt.Build(pluginRoot, opts.Mode, bundle, schemaJSON, opts.Focus)
+	pr, err := prompt.Build(pluginRoot, opts.Mode, bundle, schemaJSON, opts.Focus, opts.Glossary)
 	if err != nil {
 		return Result{}, err
 	}
