@@ -25,7 +25,8 @@ import (
 //   - Task 8: query API (Query type)
 type Runtime struct {
 	wazRt wazero.Runtime
-	tsMod wazeroModule // placeholder type until Task 6 fills in api.Module
+	rfns  *runtimeFns
+	tsMod wazeroModule // placeholder until Task 6 fills in api.Module
 }
 
 // wazeroModule is a placeholder until Task 6 replaces it with api.Module.
@@ -58,33 +59,32 @@ func newRuntime(ctx context.Context) (*Runtime, error) {
 		return nil, fmt.Errorf("treesitter: wasi instantiate: %w", err)
 	}
 
-	// Host module with the 6 runtime callback stubs.
-	if err := instantiateHostModule(ctx, rt); err != nil {
+	rfns := &runtimeFns{}
+	if err := instantiateHostModule(ctx, rt, rfns); err != nil {
 		_ = rt.Close(ctx)
 		return nil, fmt.Errorf("treesitter: host instantiate: %w", err)
 	}
 
-	return &Runtime{wazRt: rt}, nil
+	return &Runtime{wazRt: rt, rfns: rfns}, nil
 }
 
 // instantiateHostModule wires up the "host" module that env.wasm imports
-// from. The 6 runtime callbacks are stubs that do nothing useful but
-// must exist to satisfy the runtime's imports.
+// from. Provides:
+//   - 6 tree-sitter / emscripten callback stubs (no-ops; runtime won't
+//     normally invoke them).
+//   - 10 libc trampolines (via addTrampolines) that forward to runtime
+//     exports via the runtimeFns late-bound struct.
 //
-// The 10 libc stubs (calloc, malloc, free, realloc, memcpy, memcmp,
-// iswspace, iswxdigit, iswalnum, __assert_fail) are also present here
-// as zero-value placeholders. Task 5 replaces them with proper trampolines
-// that forward to runtime exports via the runtimeFns late-bound struct.
-func instantiateHostModule(ctx context.Context, rt wazero.Runtime) error {
-	_, err := rt.NewHostModuleBuilder("host").
-		// Tree-sitter runtime callbacks.
+// The trampolines fail-loud (panic) if invoked before bindRuntimeFns
+// has populated rfns — but this never happens in practice because no
+// grammar can run before the runtime module is up.
+func instantiateHostModule(ctx context.Context, rt wazero.Runtime, rfns *runtimeFns) error {
+	b := rt.NewHostModuleBuilder("host").
 		NewFunctionBuilder().
 		WithFunc(func(ctx context.Context, requestedPages int32) int32 { return 0 }).
 		Export("emscripten_resize_heap").
 		NewFunctionBuilder().
 		WithFunc(func(ctx context.Context) {
-			// Runtime should never call this in normal operation;
-			// it indicates a fatal C-level abort.
 			panic("treesitter: _abort_js invoked by runtime")
 		}).
 		Export("_abort_js").
@@ -99,41 +99,9 @@ func instantiateHostModule(ctx context.Context, rt wazero.Runtime) error {
 		Export("tree_sitter_parse_callback").
 		NewFunctionBuilder().
 		WithFunc(func(ctx context.Context, logType, message int32) {}).
-		Export("tree_sitter_log_callback").
-		// libc stubs — zero-value placeholders. Task 5 replaces these with
-		// trampolines that delegate to the runtime module's own exports.
-		NewFunctionBuilder().
-		WithFunc(func(ctx context.Context, nmemb, size int32) int32 { return 0 }).
-		Export("calloc").
-		NewFunctionBuilder().
-		WithFunc(func(ctx context.Context, size int32) int32 { return 0 }).
-		Export("malloc").
-		NewFunctionBuilder().
-		WithFunc(func(ctx context.Context, ptr int32) {}).
-		Export("free").
-		NewFunctionBuilder().
-		WithFunc(func(ctx context.Context, ptr, size int32) int32 { return 0 }).
-		Export("realloc").
-		NewFunctionBuilder().
-		WithFunc(func(ctx context.Context, dst, src, n int32) int32 { return dst }).
-		Export("memcpy").
-		NewFunctionBuilder().
-		WithFunc(func(ctx context.Context, s1, s2, n int32) int32 { return 0 }).
-		Export("memcmp").
-		NewFunctionBuilder().
-		WithFunc(func(ctx context.Context, wc int32) int32 { return 0 }).
-		Export("iswspace").
-		NewFunctionBuilder().
-		WithFunc(func(ctx context.Context, wc int32) int32 { return 0 }).
-		Export("iswxdigit").
-		NewFunctionBuilder().
-		WithFunc(func(ctx context.Context, wc int32) int32 { return 0 }).
-		Export("iswalnum").
-		NewFunctionBuilder().
-		WithFunc(func(ctx context.Context, assertion, file, line, fn int32) {
-			panic("treesitter: __assert_fail invoked by runtime")
-		}).
-		Export("__assert_fail").
-		Instantiate(ctx)
+		Export("tree_sitter_log_callback")
+
+	b = addTrampolines(b, rfns)
+	_, err := b.Instantiate(ctx)
 	return err
 }

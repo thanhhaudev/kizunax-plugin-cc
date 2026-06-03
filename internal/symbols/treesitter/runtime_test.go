@@ -19,7 +19,8 @@ func TestRuntime_EnvAndGOTMem_Instantiate(t *testing.T) {
 	if _, err := wasi_snapshot_preview1.Instantiate(ctx, rt); err != nil {
 		t.Fatal(err)
 	}
-	if err := instantiateHostModule(ctx, rt); err != nil {
+	rfns := &runtimeFns{}
+	if err := instantiateHostModule(ctx, rt, rfns); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := rt.InstantiateWithConfig(ctx, EnvWASM,
