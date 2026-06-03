@@ -25,3 +25,5 @@ The `file` field MUST be the EXACT repo-relative path copied verbatim from the d
 Diff to review:
 
 {{REVIEW_INPUT}}
+
+{{REFERENCED_FILES}}

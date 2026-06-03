@@ -60,8 +60,8 @@ func setupFakePluginRoot(t *testing.T) string {
 	t.Helper()
 	root := t.TempDir()
 	mustMkdir(t, filepath.Join(root, "prompts"))
-	mustWrite(t, filepath.Join(root, "prompts", "review.md"), "REVIEW: {{TARGET_LABEL}}")
-	mustWrite(t, filepath.Join(root, "prompts", "adversarial-review.md"), "ADV: {{TARGET_LABEL}}")
+	mustWrite(t, filepath.Join(root, "prompts", "review.md"), "REVIEW: {{TARGET_LABEL}}\n{{REFERENCED_FILES}}")
+	mustWrite(t, filepath.Join(root, "prompts", "adversarial-review.md"), "ADV: {{TARGET_LABEL}}\n{{REFERENCED_FILES}}")
 	return root
 }
 
@@ -76,5 +76,44 @@ func mustWrite(t *testing.T, p, c string) {
 	t.Helper()
 	if err := os.WriteFile(p, []byte(c), 0o644); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestBuild_ReferencedFilesRendered(t *testing.T) {
+	root := setupFakePluginRoot(t)
+	bundle := diff.Bundle{
+		TargetLabel: "test",
+		ReferencedFiles: []diff.ReferencedFile{
+			{
+				Path:    "internal/path/path.go",
+				Excerpt: "func Base(p string) string { return p }",
+				Symbols: []string{"Base"},
+			},
+		},
+	}
+	p, err := Build(root, ModeStandard, bundle, "{}", "", "")
+	if err != nil {
+		t.Fatalf("build: %v", err)
+	}
+	if !strings.Contains(p.User, "Referenced files for context") {
+		t.Fatalf("expected 'Referenced files for context' header in user prompt:\n%s", p.User)
+	}
+	if !strings.Contains(p.User, "internal/path/path.go") {
+		t.Fatalf("expected referenced file path in prompt")
+	}
+	if !strings.Contains(p.User, "func Base") {
+		t.Fatalf("expected excerpt content in prompt")
+	}
+	if !strings.Contains(p.User, "DO NOT flag findings") {
+		t.Fatalf("expected read-only instruction in prompt")
+	}
+}
+
+func TestBuild_ReferencedFilesOmittedWhenEmpty(t *testing.T) {
+	root := setupFakePluginRoot(t)
+	bundle := diff.Bundle{TargetLabel: "test"} // no ReferencedFiles
+	p, _ := Build(root, ModeStandard, bundle, "{}", "", "")
+	if strings.Contains(p.User, "Referenced files for context") {
+		t.Fatalf("section must be absent when no referenced files")
 	}
 }
