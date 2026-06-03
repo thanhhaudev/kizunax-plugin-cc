@@ -25,6 +25,10 @@ const sizeOfNode = 5 * sizeOfInt
 
 // Language wraps a loaded tree-sitter grammar (a wazero module + the
 // language pointer returned by tree_sitter_<name>).
+//
+// Lifecycle: call Close when the Language is no longer needed to release
+// the underlying grammar side module. After Close the Language must not
+// be used for parsing.
 type Language struct {
 	rt         *Runtime
 	name       string
@@ -117,6 +121,17 @@ func (r *Runtime) LoadGrammar(ctx context.Context, grammarName string, wasmBytes
 	}, nil
 }
 
+// Close releases the grammar side module. After Close the Language
+// must not be used. Idempotent (returns nil if already closed).
+func (l *Language) Close(ctx context.Context) error {
+	if l == nil || l.grammarMod == nil {
+		return nil
+	}
+	err := l.grammarMod.Close(ctx)
+	l.grammarMod = nil
+	return err
+}
+
 // Tree is a parsed tree-sitter tree. Always Close after use to free
 // wasm-side memory.
 type Tree struct {
@@ -155,8 +170,9 @@ func (l *Language) Parse(ctx context.Context, src []byte) (*Tree, error) {
 			parserNewFn != nil, setLangFn != nil, parseFn != nil, deleteFn != nil)
 	}
 
-	// Serialize parse calls: set package-global source buffer so that the
-	// tree_sitter_parse_callback host function can serve bytes to the parser.
+	// Guard parseSrcBuf only; concurrent Parse() calls are not safe
+	// because they share Runtime.transferBuf and the wazero module state.
+	// Caller must serialize Parse for the same Runtime.
 	parseSrcMu.Lock()
 	parseSrcBuf = src
 	parseSrcMu.Unlock()

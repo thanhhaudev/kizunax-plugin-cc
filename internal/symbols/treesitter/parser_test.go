@@ -30,6 +30,7 @@ func TestParser_ParsePHP(t *testing.T) {
 	if err != nil {
 		t.Fatalf("LoadGrammar: %v", err)
 	}
+	defer lang.Close(ctx)
 
 	src := []byte("<?php\nfunction login() { return true; }\n")
 	tree, err := lang.Parse(ctx, src)

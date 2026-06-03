@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Rebuild env.wasm + got_mem.wasm from the WAT sources committed alongside.
+# Rebuild env.wasm, got_mem.wasm, mem_owner.wasm, env_grammar.wasm from the
+# WAT sources committed alongside.
 #
 # Run after editing WAT sources. Output is committed; not needed at runtime.
 #
@@ -21,7 +22,7 @@ if ! command -v wat2wasm >/dev/null; then
   exit 1
 fi
 
-for name in env got_mem; do
+for name in env got_mem mem_owner env_grammar; do
   wat2wasm "$SRC_DIR/$name.wat" -o "$OUT_DIR/$name.wasm"
   size=$(wc -c < "$OUT_DIR/$name.wasm")
   echo "  ✓ $name.wasm ($size bytes)"
