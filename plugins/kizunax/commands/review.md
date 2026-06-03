@@ -102,3 +102,23 @@ Combinable:
 
 - **Glossary auto-inject**: if the workspace contains `.kizunax/glossary.md`, `docs/glossary.md`, or `GLOSSARY.md` (priority in that order), its verbatim content (capped at 16 KiB) is prepended to the system prompt so the reviewer understands project-specific terminology. No file → silently skipped.
 - **TL;DR summary**: a short executive summary is rendered at the top of the output when the review surfaces **3 or more findings**. Force on with `--summary`, force off with `--no-summary` (flags are mutually exclusive). The TL;DR replaces the model's own verbose summary in the same visual slot.
+
+## Behavior (v0.12+)
+
+- **Pre-flight context enrichment**: before sending the review prompt, kizunax
+  scans the diff for symbol references (function calls, type usage, imports),
+  walks the workspace for their definitions, and includes the relevant referenced
+  files as a separate `## Referenced files for context (read-only)` section in
+  the prompt. This gives the reviewer enough context to verify how diff'd code
+  actually uses helpers, types, and constants — reducing speculative findings
+  about imports/APIs the LLM cannot otherwise see.
+- Up to 5 referenced files per symbol, up to 8 KiB per file excerpt, with the
+  256 KiB total prompt cap unchanged. When the cap is hit, lowest-priority
+  files (fewest symbol matches, then largest size) are dropped first; main
+  review always proceeds.
+- Multi-language: Go uses stdlib `go/ast` (precise). Other supported languages
+  (TypeScript, JavaScript, Python, Rust, Java, C#, Ruby, PHP, Kotlin, Swift,
+  Scala, C++, C) use universal regex by default, with WASM grammar precision
+  arriving incrementally in v0.12.x follow-up patches.
+- Lite build (`make build-lite` or `go build -tags lite`) skips WASM grammar
+  embedding for a smaller binary; uses regex extraction across all languages.
