@@ -37,18 +37,18 @@ var Registry = map[string]Entry{
 		Lang: "php", GrammarName: "php",
 		NpmPackage: "tree-sitter-php", Version: "0.24.2",
 		WasmFile: "tree-sitter-php.wasm",
-		SHA256:   "REPLACE_WITH_ACTUAL_SHA_AT_INSTALL_TIME",
+		SHA256:   "d4df6a6ff08c87c3ec4f9cbb785fe09998a0cb570e03f57d7b19b3acfb146aa7",
 	},
 	"typescript": {
 		Lang: "typescript", GrammarName: "typescript",
 		NpmPackage: "tree-sitter-typescript", Version: "0.23.2",
 		WasmFile: "tree-sitter-typescript.wasm",
-		SHA256:   "REPLACE_WITH_ACTUAL_SHA_AT_INSTALL_TIME",
+		SHA256:   "778025db5a8be0e70f8ccc3671e486dfeddd048c25d9e8a70c26de2e1bf6f97d",
 	},
 	"python": {
 		Lang: "python", GrammarName: "python",
 		NpmPackage: "tree-sitter-python", Version: "0.23.6",
 		WasmFile: "tree-sitter-python.wasm",
-		SHA256:   "REPLACE_WITH_ACTUAL_SHA_AT_INSTALL_TIME",
+		SHA256:   "8c93692fb368e288a5824cee55773c9b3602804f513bda48c97661e52e9c2da2",
 	},
 }
