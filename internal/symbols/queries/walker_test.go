@@ -3,6 +3,8 @@
 package queries
 
 import (
+	"context"
+	"os"
 	"testing"
 
 	"github.com/thanhhaudev/kizunax-plugin-cc/internal/symbols"
@@ -87,5 +89,70 @@ func TestScanCaptures_DropsUnknown(t *testing.T) {
 	syms := ScanCaptures(caps, []byte("foo"), "x")
 	if len(syms) != 1 {
 		t.Fatalf("expected 1 symbol (unknown dropped), got %d", len(syms))
+	}
+}
+
+func loadPhpGrammar(t *testing.T) []byte {
+	t.Helper()
+	path := "../../../test-fixtures/tree-sitter-php.wasm"
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Skipf("php grammar fixture not present: %v", err)
+	}
+	return data
+}
+
+// TestPhpQuery_ExtractsKnownSymbols verifies the full LoadGrammar →
+// NewQuery → Parse → Exec pipeline for PHP. The NewQuery-before-Parse
+// ordering is mandatory: ts_parser_delete leaves a dlmalloc sentinel in
+// the free list that corrupts ts_query_new's internal malloc if called
+// after Parse.
+func TestPhpQuery_ExtractsKnownSymbols(t *testing.T) {
+	ctx := context.Background()
+	r, err := treesitter.GetRuntimeForTest(ctx)
+	if err != nil {
+		t.Skipf("runtime unavailable: %v", err)
+	}
+	lang, err := r.LoadGrammar(ctx, "php", loadPhpGrammar(t))
+	if err != nil {
+		t.Fatalf("LoadGrammar: %v", err)
+	}
+	defer lang.Close(ctx)
+
+	// IMPORTANT: NewQuery must be called BEFORE Parse on this Language.
+	q, err := lang.NewQuery(ctx, PHPTags)
+	if err != nil {
+		t.Fatalf("NewQuery: %v", err)
+	}
+	defer q.Close(ctx)
+
+	src := []byte(`<?php
+function login() {}
+class AuthService {
+    public function authenticate() {}
+}
+`)
+	tree, err := lang.Parse(ctx, src)
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	defer tree.Close(ctx)
+
+	caps, err := q.Exec(ctx, tree.RootNode(ctx))
+	if err != nil {
+		t.Fatalf("Exec: %v", err)
+	}
+
+	syms := ScanCaptures(caps, src, "test.php")
+	defSet := map[string]bool{}
+	for _, s := range syms {
+		if s.Kind == symbols.SymDef {
+			defSet[s.Name] = true
+		}
+	}
+	for _, want := range []string{"login", "AuthService", "authenticate"} {
+		if !defSet[want] {
+			t.Errorf("missing def %q in %v", want, syms)
+		}
 	}
 }
