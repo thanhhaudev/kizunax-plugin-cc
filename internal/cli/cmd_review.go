@@ -175,7 +175,8 @@ func runReviewWithMode(args []string, mode prompt.Mode) error {
 			NoSummary:     noSummary,
 			HelperBaseURL: cfg.Helper.BaseURL,
 			HelperModel:   cfg.Helper.Model,
-			HelperAPIKey:  cfg.HelperAPIKey,
+			HelperKeyHash: helperKeyHash(cfg.HelperAPIKey),
+			HelperKeyMask: helperKeyMask(cfg.HelperAPIKey),
 		},
 		LogPath:  "",
 		Warnings: bundle.Warnings,
@@ -217,6 +218,24 @@ func runReviewWithMode(args []string, mode prompt.Mode) error {
 		appendUsageFooterIfNotQuiet(os.Stdout, quiet, ws, cfg.APIKey)
 	}
 	return nil
+}
+
+// helperKeyHash returns the sha256 hex of the helper key, or "" when no
+// helper key was resolved (so omitempty drops the field from the job JSON).
+func helperKeyHash(apiKey string) string {
+	if apiKey == "" {
+		return ""
+	}
+	return usage.HashKey(apiKey)
+}
+
+// helperKeyMask returns the display-safe mask of the helper key, or ""
+// when no helper key was resolved.
+func helperKeyMask(apiKey string) string {
+	if apiKey == "" {
+		return ""
+	}
+	return usage.MaskKey(apiKey)
 }
 
 // parseTarget reads flags --working-tree / --base / --commit / --from --to

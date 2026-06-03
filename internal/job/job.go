@@ -46,13 +46,16 @@ type Request struct {
 	// Persisted because the raw key is never stored.
 	KeyMask string `json:"key_mask,omitempty"`
 
-	// v0.11+ helper TL;DR fields. Persisted at spawn so background workers
-	// stay consistent across config changes / key rotation.
+	// v0.11+ helper TL;DR fields. Persisted at spawn so future background
+	// workers stay consistent across config changes / key rotation. The
+	// raw helper key is NEVER stored — only hash + mask, mirroring the
+	// KeyHash/KeyMask pattern above.
 	Summary       bool   `json:"summary,omitempty"`
 	NoSummary     bool   `json:"no_summary,omitempty"`
 	HelperBaseURL string `json:"helper_base_url,omitempty"`
 	HelperModel   string `json:"helper_model,omitempty"`
-	HelperAPIKey  string `json:"helper_api_key,omitempty"`
+	HelperKeyHash string `json:"helper_key_hash,omitempty"`
+	HelperKeyMask string `json:"helper_key_mask,omitempty"`
 }
 
 type TokenUsage struct {
