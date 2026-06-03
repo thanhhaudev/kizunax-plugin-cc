@@ -220,3 +220,35 @@ func contains(s, sub string) bool {
 	}
 	return false
 }
+
+func TestRenderReview_TLDRReplacesSummary(t *testing.T) {
+	result := schema.ReviewResult{
+		Verdict: "needs-attention",
+		Summary: "Model's own verbose self-summary that should NOT appear.",
+		TLDR:    "Helper TL;DR: 3 issues, 1 critical race condition. Address before merge.",
+		Findings: []schema.Finding{
+			{Severity: "critical", Title: "Race", File: "a.go", LineStart: 1, LineEnd: 1, Confidence: 0.9},
+		},
+	}
+	bundle := diff.Bundle{TargetLabel: "test"}
+	out := RenderReview(result, bundle, 0, prompt.ModeStandard)
+
+	if !strings.Contains(out, "Helper TL;DR") {
+		t.Fatalf("expected TLDR text in output: %s", out)
+	}
+	if strings.Contains(out, "verbose self-summary") {
+		t.Fatalf("Summary must NOT render when TLDR is set: %s", out)
+	}
+}
+
+func TestRenderReview_SummaryRenders_WhenTLDREmpty(t *testing.T) {
+	result := schema.ReviewResult{
+		Verdict: "approve",
+		Summary: "Original summary text.",
+	}
+	bundle := diff.Bundle{TargetLabel: "test"}
+	out := RenderReview(result, bundle, 0, prompt.ModeStandard)
+	if !strings.Contains(out, "Original summary text.") {
+		t.Fatalf("expected Summary to render when TLDR empty: %s", out)
+	}
+}
