@@ -5,6 +5,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"unicode/utf8"
 )
 
 const maxGlossaryBytes = 16 * 1024
@@ -49,14 +50,29 @@ func Load(workspaceRoot string) (Glossary, error) {
 			return Glossary{}, fmt.Errorf("read %s: %w", abs, err)
 		}
 		truncated := len(buf) > maxGlossaryBytes
+		content := string(buf)
 		if truncated {
-			buf = buf[:maxGlossaryBytes]
+			content = truncateUTF8(content, maxGlossaryBytes)
 		}
 		return Glossary{
 			Path:      abs,
-			Content:   string(buf),
+			Content:   content,
 			Truncated: truncated,
 		}, nil
 	}
 	return Glossary{}, nil
+}
+
+// truncateUTF8 returns s shortened to at most maxBytes, snapped back to the
+// nearest rune boundary so the result is always valid UTF-8.
+func truncateUTF8(s string, maxBytes int) string {
+	if len(s) <= maxBytes {
+		return s
+	}
+	for i := maxBytes; i > 0; i-- {
+		if utf8.RuneStart(s[i]) {
+			return s[:i]
+		}
+	}
+	return ""
 }

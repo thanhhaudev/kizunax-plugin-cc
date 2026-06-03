@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"unicode/utf8"
 )
 
 func TestLoad_NoFile_ReturnsEmpty(t *testing.T) {
@@ -72,6 +73,28 @@ func TestLoad_TruncatesOver16KiB(t *testing.T) {
 	}
 	if !g.Truncated {
 		t.Fatalf("expected Truncated=true")
+	}
+}
+
+func TestLoad_TruncatesAtRuneBoundary_NotMidRune(t *testing.T) {
+	dir := t.TempDir()
+	// 3-byte rune "ế" repeated past the cap. A naive byte slice could split
+	// the rune at byte 16384 and yield invalid UTF-8.
+	huge := strings.Repeat("ế", maxGlossaryBytes)
+	mustWrite(t, filepath.Join(dir, "GLOSSARY.md"), huge)
+
+	g, err := Load(dir)
+	if err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if !g.Truncated {
+		t.Fatalf("expected Truncated=true")
+	}
+	if !utf8.ValidString(g.Content) {
+		t.Fatalf("glossary content is not valid UTF-8 after truncation")
+	}
+	if len(g.Content) > maxGlossaryBytes {
+		t.Fatalf("content %d bytes exceeds cap %d", len(g.Content), maxGlossaryBytes)
 	}
 }
 

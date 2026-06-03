@@ -151,31 +151,20 @@ func setupCheck(providerOverride string) error {
 		fmt.Println()
 	}
 
-	// Helper (Public v1) block — v0.11+
+	// Helper (Public v1) block — v0.11+. Defer resolution to config.Load so
+	// the printed values reflect KIZUNAX_HELPER_* env-var overrides too.
 	fmt.Println("[helper] (Public v1)")
-	helperCfg := config.HelperConfig{
-		BaseURL:        config.KizunaXHelperBaseURL,
-		Model:          config.DefaultHelperModel,
-		TimeoutSeconds: config.DefaultHelperTimeoutSeconds,
-	}
-	if file.Helper != nil {
-		if file.Helper.BaseURL != "" {
-			helperCfg.BaseURL = file.Helper.BaseURL
+	if cfg, cfgErr := config.Load(providerOverride); cfgErr == nil {
+		fmt.Printf("  base_url: %s\n", cfg.Helper.BaseURL)
+		fmt.Printf("  model:    %s\n", cfg.Helper.Model)
+		fmt.Printf("  timeout:  %ds\n", cfg.Helper.TimeoutSeconds)
+		if file.Helper != nil && len(file.Helper.APIKeys) > 0 {
+			fmt.Printf("  keys:     %d configured (dedicated helper pool)\n", len(file.Helper.APIKeys))
+		} else {
+			fmt.Printf("  keys:     reuse provider pool (%d)\n", len(file.APIKeys))
 		}
-		if file.Helper.Model != "" {
-			helperCfg.Model = file.Helper.Model
-		}
-		if file.Helper.TimeoutSeconds > 0 {
-			helperCfg.TimeoutSeconds = file.Helper.TimeoutSeconds
-		}
-	}
-	fmt.Printf("  base_url: %s\n", helperCfg.BaseURL)
-	fmt.Printf("  model:    %s\n", helperCfg.Model)
-	fmt.Printf("  timeout:  %ds\n", helperCfg.TimeoutSeconds)
-	if file.Helper != nil && len(file.Helper.APIKeys) > 0 {
-		fmt.Printf("  keys:     %d configured (dedicated helper pool)\n", len(file.Helper.APIKeys))
 	} else {
-		fmt.Printf("  keys:     reuse provider pool (%d)\n", len(file.APIKeys))
+		fmt.Printf("  ✗ %v\n", cfgErr)
 	}
 	fmt.Println()
 
