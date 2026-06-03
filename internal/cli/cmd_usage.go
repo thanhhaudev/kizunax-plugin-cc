@@ -36,7 +36,12 @@ func runUsage(args []string) error {
 		return err
 	}
 	file = config.MigrateLegacy(file)
-	keys := file.APIKeys
+	providerKeys := file.APIKeys
+	var helperKeys []string
+	if file.Helper != nil {
+		helperKeys = file.Helper.APIKeys
+	}
+	keys := dedupeUsageKeys(providerKeys, helperKeys)
 	if len(keys) == 0 {
 		return xerrors.User("missing_api_key",
 			"no API keys configured",
@@ -63,6 +68,29 @@ func runUsage(args []string) error {
 
 	writeUsageOutput(os.Stdout, cfg.Provider, file.Rotation, usages, time.Now())
 	return nil
+}
+
+// dedupeUsageKeys returns the union of provider + helper keys, preserving
+// order (provider keys first, helper keys after). Empty strings and
+// duplicates are skipped.
+func dedupeUsageKeys(providerKeys, helperKeys []string) []string {
+	seen := map[string]bool{}
+	out := make([]string, 0, len(providerKeys)+len(helperKeys))
+	for _, k := range providerKeys {
+		if k == "" || seen[k] {
+			continue
+		}
+		seen[k] = true
+		out = append(out, k)
+	}
+	for _, k := range helperKeys {
+		if k == "" || seen[k] {
+			continue
+		}
+		seen[k] = true
+		out = append(out, k)
+	}
+	return out
 }
 
 func writeUsageOutput(w io.Writer, provider, rotation string, usages []usage.KeyUsage, now time.Time) {
