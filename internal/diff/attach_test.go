@@ -8,7 +8,7 @@ func TestAttachReferenced_FitsWithinBudget(t *testing.T) {
 		{path: "a.go", excerpt: "func A() {}\n", syms: []string{"A"}},
 		{path: "b.go", excerpt: "func B() {}\n", syms: []string{"B"}},
 	}
-	b = AttachReferenced(b, toRefs(refs), 1024)
+	AttachReferenced(&b, toRefs(refs), 1024)
 	if len(b.ReferencedFiles) != 2 {
 		t.Fatalf("expected 2 attached, got %d", len(b.ReferencedFiles))
 	}
@@ -25,7 +25,7 @@ func TestAttachReferenced_DropsLowPriorityOverBudget(t *testing.T) {
 		{path: "big.go", excerpt: string(big), syms: []string{"D"}},                // 1 match, large
 		{path: "med.go", excerpt: string(big[:200]), syms: []string{"E", "F"}},     // 2 matches, medium
 	}
-	b = AttachReferenced(b, toRefs(refs), 600)
+	AttachReferenced(&b, toRefs(refs), 600)
 	// hot.go (3 syms, small) MUST be kept.
 	// med.go (2 syms) MUST be kept if fits.
 	// big.go likely dropped.
@@ -45,7 +45,7 @@ func TestAttachReferenced_AppendsWarningWhenDropped(t *testing.T) {
 		{path: "b.go", excerpt: "BBBBBBBBBB", syms: []string{"B"}}, // 10 bytes excerpt
 	}
 	// cost per file = len(excerpt) + 80 overhead = 90; budget 100 fits exactly 1
-	b = AttachReferenced(b, toRefs(refs), 100)
+	AttachReferenced(&b, toRefs(refs), 100)
 	if len(b.ReferencedFiles) != 1 {
 		t.Fatalf("expected 1 kept, got %d", len(b.ReferencedFiles))
 	}
@@ -64,11 +64,23 @@ func TestAttachReferenced_DeterministicPriority(t *testing.T) {
 		{path: "y.go", excerpt: "Y", syms: []string{"Y", "Z"}},
 		{path: "x.go", excerpt: "X", syms: []string{"X"}},
 	}
-	b1 := AttachReferenced(Bundle{}, toRefs(refs1), 1024)
-	b2 := AttachReferenced(Bundle{}, toRefs(refs2), 1024)
+	b1 := Bundle{}
+	AttachReferenced(&b1, toRefs(refs1), 1024)
+	b2 := Bundle{}
+	AttachReferenced(&b2, toRefs(refs2), 1024)
 	if pathsOf(b1.ReferencedFiles)[0] != pathsOf(b2.ReferencedFiles)[0] {
 		t.Fatalf("priority sort not deterministic: %v vs %v",
 			pathsOf(b1.ReferencedFiles), pathsOf(b2.ReferencedFiles))
+	}
+}
+
+func TestAttachReferenced_MutatesInPlace(t *testing.T) {
+	b := Bundle{}
+	refs := []refInput{{path: "x.go", excerpt: "package x", syms: []string{"X"}}}
+	AttachReferenced(&b, toRefs(refs), 1024)
+
+	if len(b.ReferencedFiles) != 1 {
+		t.Fatalf("expected 1 referenced file, got %d", len(b.ReferencedFiles))
 	}
 }
 

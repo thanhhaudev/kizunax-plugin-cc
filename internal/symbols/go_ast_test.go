@@ -152,3 +152,46 @@ func wantContains(t *testing.T, got []string, want ...string) {
 		}
 	}
 }
+
+func TestGoAST_ThreeLevelSelector(t *testing.T) {
+	src := []byte(`package main
+
+func main() {
+	m.auth.Authenticate("x")
+	pkg.Sub.Func()
+}
+`)
+	got := (&GoASTExtractor{}).Extract("main.go", src)
+
+	want := map[string]bool{
+		"call:auth.Authenticate": false,
+		"call:Sub.Func":          false,
+	}
+	for _, s := range got {
+		if s.Kind == SymCall {
+			key := "call:" + s.Pkg + "." + s.Name
+			if _, ok := want[key]; ok {
+				want[key] = true
+			}
+		}
+	}
+	for k, ok := range want {
+		if !ok {
+			t.Errorf("missing expected call symbol: %s — got %+v", k, got)
+		}
+	}
+}
+
+func TestGoAST_CallResultChain_BailsToTwoLevel(t *testing.T) {
+	// f().method — Fun.X is *ast.CallExpr (not Ident, not SelectorExpr).
+	// Must NOT emit a bogus pkg name; emitting Pkg="" is acceptable.
+	src := []byte(`package main
+func main() { f().method() }
+`)
+	got := (&GoASTExtractor{}).Extract("main.go", src)
+	for _, s := range got {
+		if s.Kind == SymCall && s.Name == "method" && s.Pkg != "" {
+			t.Errorf("expected no pkg for f().method, got Pkg=%q", s.Pkg)
+		}
+	}
+}

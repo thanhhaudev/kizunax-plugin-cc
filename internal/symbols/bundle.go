@@ -65,7 +65,7 @@ func ExtractFromBundle(b diff.Bundle) []Symbol {
 		// back to RegexExtractor so we still surface call sites for the
 		// resolver to look up.
 		if len(syms) == 0 && strings.HasSuffix(path, ".go") {
-			syms = (&RegexExtractor{}).Extract(path, []byte(added))
+			syms = (&RegexExtractor{lang: extToLang(".go")}).Extract(path, []byte(added))
 		}
 		add(syms)
 	}

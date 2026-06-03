@@ -8,4 +8,6 @@ func useWASM(ext string) bool { return false }
 
 // newWASMExtractor is unreachable in lite builds (useWASM gates the call).
 // Defined here so factory.go compiles under the lite tag.
-func newWASMExtractor(ext string) Extractor { return &RegexExtractor{} }
+func newWASMExtractor(ext string) Extractor {
+	return &RegexExtractor{lang: extToLang(ext)}
+}

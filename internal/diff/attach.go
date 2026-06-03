@@ -14,15 +14,12 @@ type ReferenceInput struct {
 	Symbols []string
 }
 
-// AttachReferenced merges enrichment references into the bundle, respecting
-// the budgetBytes cap. References sorted by priority (more symbols first,
-// smaller excerpt within same count). Dropped files append a warning to
-// b.Warnings (caller surfaces to stderr).
-//
-// Mutates and returns b for convenience.
-func AttachReferenced(b Bundle, refs []ReferenceInput, budgetBytes int) Bundle {
+// AttachReferenced merges enrichment references into the bundle,
+// respecting the budget cap (256 KiB by default). Mutates b in place.
+// Warnings about dropped/oversized references are appended to b.Warnings.
+func AttachReferenced(b *Bundle, refs []ReferenceInput, budgetBytes int) {
 	if len(refs) == 0 || budgetBytes <= 0 {
-		return b
+		return
 	}
 
 	// Dedup by Path: if same file appears twice (different symbols),
@@ -81,7 +78,6 @@ func AttachReferenced(b Bundle, refs []ReferenceInput, budgetBytes int) Bundle {
 			fmt.Sprintf("referenced files dropped: %d of %d (kept %d) due to %d-byte cap",
 				dropped, len(sortable), len(kept), budgetBytes))
 	}
-	return b
 }
 
 func appendUnique(have []string, add ...string) []string {
