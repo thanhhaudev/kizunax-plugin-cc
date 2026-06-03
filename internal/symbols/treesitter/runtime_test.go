@@ -5,7 +5,32 @@ package treesitter
 import (
 	"context"
 	"testing"
+
+	"github.com/tetratelabs/wazero"
+	"github.com/tetratelabs/wazero/imports/wasi_snapshot_preview1"
 )
+
+func TestRuntime_EnvAndGOTMem_Instantiate(t *testing.T) {
+	ctx := context.Background()
+	// Build a fresh wazero runtime separately (not the singleton) so this
+	// test exercises the env + GOT.mem path in isolation.
+	rt := wazero.NewRuntime(ctx)
+	defer rt.Close(ctx)
+	if _, err := wasi_snapshot_preview1.Instantiate(ctx, rt); err != nil {
+		t.Fatal(err)
+	}
+	if err := instantiateHostModule(ctx, rt); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := rt.InstantiateWithConfig(ctx, EnvWASM,
+		wazero.NewModuleConfig().WithName("env")); err != nil {
+		t.Fatalf("env: %v", err)
+	}
+	if _, err := rt.InstantiateWithConfig(ctx, GOTMemWASM,
+		wazero.NewModuleConfig().WithName("GOT.mem")); err != nil {
+		t.Fatalf("GOT.mem: %v", err)
+	}
+}
 
 func TestRuntime_Init_SmokeOnly(t *testing.T) {
 	ctx := context.Background()

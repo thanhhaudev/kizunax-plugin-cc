@@ -71,10 +71,13 @@ func newRuntime(ctx context.Context) (*Runtime, error) {
 // from. The 6 runtime callbacks are stubs that do nothing useful but
 // must exist to satisfy the runtime's imports.
 //
-// In Task 5 this function grows to include 10 libc trampolines that
-// forward to runtime exports via the runtimeFns late-bound struct.
+// The 10 libc stubs (calloc, malloc, free, realloc, memcpy, memcmp,
+// iswspace, iswxdigit, iswalnum, __assert_fail) are also present here
+// as zero-value placeholders. Task 5 replaces them with proper trampolines
+// that forward to runtime exports via the runtimeFns late-bound struct.
 func instantiateHostModule(ctx context.Context, rt wazero.Runtime) error {
 	_, err := rt.NewHostModuleBuilder("host").
+		// Tree-sitter runtime callbacks.
 		NewFunctionBuilder().
 		WithFunc(func(ctx context.Context, requestedPages int32) int32 { return 0 }).
 		Export("emscripten_resize_heap").
@@ -97,6 +100,40 @@ func instantiateHostModule(ctx context.Context, rt wazero.Runtime) error {
 		NewFunctionBuilder().
 		WithFunc(func(ctx context.Context, logType, message int32) {}).
 		Export("tree_sitter_log_callback").
+		// libc stubs — zero-value placeholders. Task 5 replaces these with
+		// trampolines that delegate to the runtime module's own exports.
+		NewFunctionBuilder().
+		WithFunc(func(ctx context.Context, nmemb, size int32) int32 { return 0 }).
+		Export("calloc").
+		NewFunctionBuilder().
+		WithFunc(func(ctx context.Context, size int32) int32 { return 0 }).
+		Export("malloc").
+		NewFunctionBuilder().
+		WithFunc(func(ctx context.Context, ptr int32) {}).
+		Export("free").
+		NewFunctionBuilder().
+		WithFunc(func(ctx context.Context, ptr, size int32) int32 { return 0 }).
+		Export("realloc").
+		NewFunctionBuilder().
+		WithFunc(func(ctx context.Context, dst, src, n int32) int32 { return dst }).
+		Export("memcpy").
+		NewFunctionBuilder().
+		WithFunc(func(ctx context.Context, s1, s2, n int32) int32 { return 0 }).
+		Export("memcmp").
+		NewFunctionBuilder().
+		WithFunc(func(ctx context.Context, wc int32) int32 { return 0 }).
+		Export("iswspace").
+		NewFunctionBuilder().
+		WithFunc(func(ctx context.Context, wc int32) int32 { return 0 }).
+		Export("iswxdigit").
+		NewFunctionBuilder().
+		WithFunc(func(ctx context.Context, wc int32) int32 { return 0 }).
+		Export("iswalnum").
+		NewFunctionBuilder().
+		WithFunc(func(ctx context.Context, assertion, file, line, fn int32) {
+			panic("treesitter: __assert_fail invoked by runtime")
+		}).
+		Export("__assert_fail").
 		Instantiate(ctx)
 	return err
 }
