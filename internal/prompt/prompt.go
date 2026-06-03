@@ -55,10 +55,11 @@ func Build(pluginRoot string, mode Mode, bundle diff.Bundle, schemaJSON, focus, 
 	}
 
 	user := interpolate(string(raw), map[string]string{
-		"TARGET_LABEL":  bundle.TargetLabel,
-		"SCHEMA_INLINE": schemaJSON,
-		"REVIEW_INPUT":  diff.RenderForPrompt(bundle),
-		"USER_FOCUS":    formatFocus(focus),
+		"TARGET_LABEL":     bundle.TargetLabel,
+		"SCHEMA_INLINE":    schemaJSON,
+		"REVIEW_INPUT":     diff.RenderForPrompt(bundle),
+		"USER_FOCUS":       formatFocus(focus),
+		"REFERENCED_FILES": renderReferencedFiles(bundle.ReferencedFiles),
 	})
 
 	system := defaultSystem
@@ -83,4 +84,23 @@ func interpolate(tmpl string, vars map[string]string) string {
 		out = strings.ReplaceAll(out, "{{"+k+"}}", v)
 	}
 	return out
+}
+
+func renderReferencedFiles(files []diff.ReferencedFile) string {
+	if len(files) == 0 {
+		return ""
+	}
+	var sb strings.Builder
+	sb.WriteString("## Referenced files for context (read-only)\n\n")
+	sb.WriteString("These files contain definitions referenced by symbols in the diff.\n")
+	sb.WriteString("Use them to understand types, constants, and helpers.\n")
+	sb.WriteString("DO NOT flag findings in these files — they are unchanged context.\n\n")
+	for _, f := range files {
+		matched := ""
+		if len(f.Symbols) > 0 {
+			matched = " (matched: " + strings.Join(f.Symbols, ", ") + ")"
+		}
+		fmt.Fprintf(&sb, "### %s%s\n```\n%s\n```\n\n", f.Path, matched, f.Excerpt)
+	}
+	return strings.TrimRight(sb.String(), "\n")
 }

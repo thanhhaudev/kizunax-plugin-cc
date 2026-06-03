@@ -130,17 +130,19 @@ func runReviewWithMode(args []string, mode prompt.Mode) error {
 	ctx := context.Background()
 	start := time.Now()
 	result, runErr := runner.Run(ctx, pluginRoot, p, bundle, runner.Options{
-		Mode:         mode,
-		Focus:        focus,
-		Glossary:     gloss.Content,
-		Model:        cfg.Model,
-		Temperature:  cfg.Temperature,
-		MaxTokens:    cfg.MaxTokens,
-		Summary:      summary,
-		NoSummary:    noSummary,
-		HelperCfg:    cfg.Helper,
-		HelperAPIKey: cfg.HelperAPIKey,
-		WorkspaceDir: wsDir,
+		Mode:          mode,
+		Focus:         focus,
+		Glossary:      gloss.Content,
+		Model:         cfg.Model,
+		Temperature:   cfg.Temperature,
+		MaxTokens:     cfg.MaxTokens,
+		Summary:       summary,
+		NoSummary:     noSummary,
+		HelperCfg:     cfg.Helper,
+		HelperAPIKey:  cfg.HelperAPIKey,
+		WorkspaceDir:  wsDir,
+		WorkspaceRoot: cwd,
+		Verbose:       verbose,
 	})
 	end := time.Now()
 	dur := end.Sub(start)
@@ -177,6 +179,8 @@ func runReviewWithMode(args []string, mode prompt.Mode) error {
 			HelperModel:   cfg.Helper.Model,
 			HelperKeyHash: helperKeyHash(cfg.HelperAPIKey),
 			HelperKeyMask: helperKeyMask(cfg.HelperAPIKey),
+			// v0.12: paths only (privacy).
+			ReferencedFilePaths: referencedFilePathsFromResult(result),
 		},
 		LogPath:  "",
 		Warnings: bundle.Warnings,
@@ -282,4 +286,12 @@ func parseTarget(args []string) (git.Target, error) {
 		t.Kind = git.TargetWorkingTree
 	}
 	return t, nil
+}
+
+func referencedFilePathsFromResult(r runner.Result) []string {
+	out := make([]string, len(r.ReferencedFiles))
+	for i, f := range r.ReferencedFiles {
+		out[i] = f.Path
+	}
+	return out
 }

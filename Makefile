@@ -28,3 +28,11 @@ run-setup: build
 
 run-review: build
 	@$(BINARY) review --working-tree
+
+build-lite:
+	@mkdir -p $(dir $(BINARY))
+	@go build -tags lite -trimpath -ldflags="-s -w" -o plugins/kizunax/bin/kizunax-lite ./cmd/kizunax
+	@echo "Built (lite, regex-only): plugins/kizunax/bin/kizunax-lite"
+
+test-lite:
+	@go test -tags lite ./internal/...

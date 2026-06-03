@@ -56,6 +56,11 @@ type Request struct {
 	HelperModel   string `json:"helper_model,omitempty"`
 	HelperKeyHash string `json:"helper_key_hash,omitempty"`
 	HelperKeyMask string `json:"helper_key_mask,omitempty"`
+
+	// v0.12+: paths of referenced files included in the review prompt.
+	// Persisted for debugging via `kizunax result <id>`. CONTENT NOT STORED
+	// — privacy + bloat (same reasoning as glossary v0.11).
+	ReferencedFilePaths []string `json:"referenced_file_paths,omitempty"`
 }
 
 type TokenUsage struct {

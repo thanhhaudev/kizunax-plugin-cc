@@ -25,11 +25,13 @@ type mockProvider struct {
 	errs      []error
 	calls     int
 	lastReq   provider.ChatRequest
+	requests  []provider.ChatRequest // captured for assertion
 }
 
 func (m *mockProvider) Name() string { return "mock" }
 
 func (m *mockProvider) Chat(ctx context.Context, req provider.ChatRequest) (provider.ChatResponse, error) {
+	m.requests = append(m.requests, req)
 	m.lastReq = req
 	idx := m.calls
 	m.calls++
@@ -55,7 +57,7 @@ func setupPluginRoot(t *testing.T) string {
 	if err := os.MkdirAll(filepath.Join(root, "schemas"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	tmpl := "Target: {{TARGET_LABEL}}\n{{USER_FOCUS}}\nSchema: {{SCHEMA_INLINE}}\nDiff: {{REVIEW_INPUT}}\n"
+	tmpl := "Target: {{TARGET_LABEL}}\n{{USER_FOCUS}}\nSchema: {{SCHEMA_INLINE}}\nDiff: {{REVIEW_INPUT}}\n{{REFERENCED_FILES}}\n"
 	if err := os.WriteFile(filepath.Join(root, "prompts", "review.md"), []byte(tmpl), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -376,6 +378,54 @@ func TestRun_LeavesAmbiguousBasenameAlone(t *testing.T) {
 	}
 	if res.Review.Findings[0].File != "auth.go" {
 		t.Fatalf("ambiguous basename should stay, got %q", res.Review.Findings[0].File)
+	}
+}
+
+func TestRun_EnrichesBundleWithReferencedFiles(t *testing.T) {
+	// Workspace fixture: definition in a sibling package.
+	// Use "authz" as the package name — not in any stdlib filter list.
+	ws := t.TempDir()
+	mustWrite := func(p, c string) {
+		path := filepath.Join(ws, p)
+		_ = os.MkdirAll(filepath.Dir(path), 0o755)
+		if err := os.WriteFile(path, []byte(c), 0o644); err != nil {
+			t.Fatalf("write: %v", err)
+		}
+	}
+	mustWrite("authz/checker.go", "package authz\nfunc CheckPerm(role string) bool { return role == \"admin\" }\n")
+
+	pluginRoot := setupPluginRoot(t)
+	bundle := diff.Bundle{
+		TargetLabel: "test",
+		Diff: `diff --git a/main.go b/main.go
++++ b/main.go
+@@ -1,1 +1,3 @@
+ package main
++import "authz"
++func main() { _ = authz.CheckPerm("admin") }
+`,
+	}
+
+	p := &mockProvider{responses: []provider.ChatResponse{
+		{Content: `{"verdict":"approve","summary":"","findings":[],"next_steps":[]}`},
+	}}
+
+	opts := Options{
+		Mode:          prompt.ModeStandard,
+		Model:         "m",
+		WorkspaceRoot: ws,
+	}
+	_, err := Run(context.Background(), pluginRoot, p, bundle, opts)
+	if err != nil {
+		t.Fatalf("run: %v", err)
+	}
+	// Verify the provider received a prompt containing the referenced file.
+	if len(p.requests) != 1 {
+		t.Fatalf("expected 1 provider call, got %d", len(p.requests))
+	}
+	reqUser := p.requests[0].Messages[0].Content
+	if !strings.Contains(reqUser, "authz/checker.go") {
+		t.Fatalf("expected referenced file in prompt; got:\n%s", reqUser)
 	}
 }
 

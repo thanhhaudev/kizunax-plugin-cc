@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/thanhhaudev/kizunax-plugin-cc/internal/config"
 	"github.com/thanhhaudev/kizunax-plugin-cc/internal/diff"
@@ -11,8 +12,10 @@ import (
 	"github.com/thanhhaudev/kizunax-plugin-cc/internal/helper"
 	"github.com/thanhhaudev/kizunax-plugin-cc/internal/prompt"
 	"github.com/thanhhaudev/kizunax-plugin-cc/internal/provider"
+	"github.com/thanhhaudev/kizunax-plugin-cc/internal/resolver"
 	"github.com/thanhhaudev/kizunax-plugin-cc/internal/schema"
 	"github.com/thanhhaudev/kizunax-plugin-cc/internal/state"
+	"github.com/thanhhaudev/kizunax-plugin-cc/internal/symbols"
 	"github.com/thanhhaudev/kizunax-plugin-cc/internal/usage"
 )
 
@@ -21,6 +24,11 @@ type Result struct {
 	InputTokens  int
 	OutputTokens int
 	TotalTokens  int
+
+	// ReferencedFiles is the v0.12 enrichment surface — the resolved files
+	// attached to the prompt as context. CLI uses this to populate the job
+	// record's referenced_file_paths field for observability.
+	ReferencedFiles []diff.ReferencedFile
 }
 
 type Options struct {
@@ -42,12 +50,53 @@ type Options struct {
 	HelperCfg    config.HelperConfig
 	HelperAPIKey string
 	WorkspaceDir state.WorkspaceDir
+
+	// v0.12+: workspace root for pre-flight enrichment.
+	// When empty, enrichment is skipped (review proceeds with diff-only).
+	WorkspaceRoot string
+
+	// Verbose toggles stderr stats for pre-flight enrichment (scanner
+	// symbol count, resolver matches, attached files / dropped files).
+	Verbose bool
 }
 
 func Run(ctx context.Context, pluginRoot string, p provider.Provider, bundle diff.Bundle, opts Options) (Result, error) {
 	schemaJSON, err := schema.LoadSchemaJSON(pluginRoot)
 	if err != nil {
 		return Result{}, xerrors.Internal("load_schema", "cannot load review schema", err)
+	}
+
+	// v0.12: pre-flight enrichment — scan diff symbols, look up definitions
+	// in the workspace, attach as referenced files (capped at 256 KiB total).
+	// Enrichment is strictly additive: any failure → empty referenced files,
+	// main review proceeds.
+	if opts.WorkspaceRoot != "" && (len(bundle.Diff) > 0 || len(bundle.Untracked) > 0) {
+		syms := symbols.ExtractFromBundle(bundle)
+		if opts.Verbose {
+			fmt.Fprintf(os.Stderr, "[verbose] scanner: extracted %d symbols\n", len(syms))
+		}
+		if len(syms) > 0 {
+			diffPaths := diff.Paths(bundle)
+			refs, rerr := resolver.FindReferences(syms, opts.WorkspaceRoot, diffPaths, 5, 4*1024)
+			if rerr != nil {
+				fmt.Fprintf(os.Stderr, "[warn] resolver: %v\n", rerr)
+			} else {
+				if opts.Verbose {
+					fmt.Fprintf(os.Stderr, "[verbose] resolver: %d references for %d symbols\n", len(refs), len(syms))
+				}
+				budget := computePromptBudget(bundle, opts.Glossary, schemaJSON)
+				before := len(bundle.Warnings)
+				bundle = diff.AttachReferenced(bundle, toReferenceInputs(refs), budget)
+				if opts.Verbose {
+					fmt.Fprintf(os.Stderr, "[verbose] bundle: %d referenced files attached (budget=%d bytes)\n", len(bundle.ReferencedFiles), budget)
+				}
+				for _, w := range bundle.Warnings[before:] {
+					if strings.HasPrefix(w, "referenced files dropped") {
+						fmt.Fprintf(os.Stderr, "[warn] %s\n", w)
+					}
+				}
+			}
+		}
 	}
 
 	pr, err := prompt.Build(pluginRoot, opts.Mode, bundle, schemaJSON, opts.Focus, opts.Glossary)
@@ -130,10 +179,11 @@ func Run(ctx context.Context, pluginRoot string, p provider.Provider, bundle dif
 	}
 
 	return Result{
-		Review:       review,
-		InputTokens:  resp.InputTokens,
-		OutputTokens: resp.OutputTokens,
-		TotalTokens:  resp.TotalTokens,
+		Review:          review,
+		InputTokens:     resp.InputTokens,
+		OutputTokens:    resp.OutputTokens,
+		TotalTokens:     resp.TotalTokens,
+		ReferencedFiles: bundle.ReferencedFiles,
 	}, nil
 }
 
@@ -145,6 +195,29 @@ func shouldSummarize(opts Options, findings []schema.Finding) bool {
 		return true
 	}
 	return len(findings) >= 3
+}
+
+// toReferenceInputs converts resolver.Reference to diff.ReferenceInput,
+// crossing the package boundary without creating an import cycle.
+func toReferenceInputs(refs []resolver.Reference) []diff.ReferenceInput {
+	out := make([]diff.ReferenceInput, len(refs))
+	for i, r := range refs {
+		out[i] = diff.ReferenceInput{
+			Path:    r.File,
+			Excerpt: r.Excerpt,
+			Symbols: []string{r.Symbol.Name},
+		}
+	}
+	return out
+}
+
+// computePromptBudget returns the remaining bytes available for referenced
+// files. v0.12 caps enrichment at 32 KiB total to keep prompts well under
+// typical LLM context limits — referenced files are useful but should not
+// dominate the prompt or trigger model output truncation.
+func computePromptBudget(b diff.Bundle, glossary, schemaJSON string) int {
+	const enrichmentCap = 32 * 1024
+	return enrichmentCap
 }
 
 // helperQuotaOK returns true unless we have cached evidence that the helper
