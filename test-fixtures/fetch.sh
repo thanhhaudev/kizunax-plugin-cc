@@ -15,3 +15,11 @@ if [[ ! -f "$PHP_PKG.wasm" ]]; then
   rm -rf package
   echo "wrote $PHP_PKG.wasm ($(wc -c < "$PHP_PKG.wasm") bytes)"
 fi
+
+TS_VER="0.23.2"
+TS_PKG="tree-sitter-typescript"
+if [[ ! -f "$TS_PKG.wasm" ]]; then
+  echo "fetching $TS_PKG@$TS_VER..."
+  curl -sSL -o "$TS_PKG.wasm" "https://unpkg.com/$TS_PKG@$TS_VER/tree-sitter-typescript.wasm"
+  echo "wrote $TS_PKG.wasm ($(wc -c < "$TS_PKG.wasm") bytes)"
+fi

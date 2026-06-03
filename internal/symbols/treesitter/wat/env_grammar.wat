@@ -27,6 +27,7 @@
   (import "host" "iswspace"     (func $iswspace     (param i32) (result i32)))
   (import "host" "iswxdigit"    (func $iswxdigit    (param i32) (result i32)))
   (import "host" "iswalnum"     (func $iswalnum     (param i32) (result i32)))
+  (import "host" "iswalpha"     (func $iswalpha     (param i32) (result i32)))
   (import "host" "__assert_fail" (func $assfail     (param i32 i32 i32 i32)))
 
   (global (export "__stack_pointer") (mut i32) (i32.const 65536))
@@ -58,5 +59,6 @@
   (export "iswspace" (func $iswspace))
   (export "iswxdigit" (func $iswxdigit))
   (export "iswalnum" (func $iswalnum))
+  (export "iswalpha" (func $iswalpha))
   (export "__assert_fail" (func $assfail))
 )

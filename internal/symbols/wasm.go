@@ -232,14 +232,51 @@ const phpTags = `
   (name) @name.reference.import)
 `
 
+// typescriptTags is the tags.scm query for TypeScript/TSX (mirrors
+// queries.TypescriptTags). Inlined here to avoid an import cycle:
+// symbols → symbols/queries → symbols. Curated subset of upstream
+// tree-sitter-typescript@0.23.2 queries/tags.scm. Note: some patterns
+// (e.g. function_declaration) require the NewQuery retry mechanism in
+// the treesitter package to handle the dlmalloc warm-up needed by
+// grammars compiled with tree-sitter-cli 0.24.x.
+const typescriptTags = `
+(function_declaration
+  name: (identifier) @name.definition.function)
+
+(method_definition
+  name: (property_identifier) @name.definition.method)
+
+(class_declaration
+  name: (type_identifier) @name.definition.class)
+
+(interface_declaration
+  name: (type_identifier) @name.definition.interface)
+
+(type_alias_declaration
+  name: (type_identifier) @name.definition.type)
+
+(call_expression
+  function: [(identifier) @name.reference.call
+             (member_expression
+               property: (property_identifier) @name.reference.call)])
+
+(import_specifier
+  name: (identifier) @name.reference.import)
+
+(import_clause
+  (identifier) @name.reference.import)
+`
+
 // queryForGrammar returns the tags.scm query string for the given grammar
-// name. Returns "" for grammars not yet wired (typescript/python in Tasks
-// 17/18; others pending).
+// name. Returns "" for grammars not yet wired (python in Task 18; others
+// pending).
 func queryForGrammar(name string) string {
 	switch name {
 	case "php":
 		return phpTags
-		// "typescript" and "python" land in Tasks 17/18.
+	case "typescript", "tsx":
+		return typescriptTags
+		// "python" lands in Task 18.
 	}
 	return ""
 }

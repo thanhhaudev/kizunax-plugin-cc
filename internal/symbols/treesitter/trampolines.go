@@ -20,9 +20,9 @@ import (
 // in addTrampolines read these by pointer, so they pick up the values
 // once they're set.
 type runtimeFns struct {
-	calloc, malloc, free, realloc api.Function
-	memcpy, memcmp                api.Function
-	iswspace, iswxdigit, iswalnum api.Function
+	calloc, malloc, free, realloc           api.Function
+	memcpy, memcmp                          api.Function
+	iswspace, iswxdigit, iswalnum, iswalpha api.Function
 }
 
 // bindRuntimeFns populates r from runtimeMod's exports. Returns an
@@ -38,6 +38,7 @@ func bindRuntimeFns(r *runtimeFns, runtimeMod api.Module) error {
 		"iswspace":  &r.iswspace,
 		"iswxdigit": &r.iswxdigit,
 		"iswalnum":  &r.iswalnum,
+		"iswalpha":  &r.iswalpha,
 	}
 	for name, ptr := range exports {
 		fn := runtimeMod.ExportedFunction(name)
@@ -136,6 +137,15 @@ func addTrampolines(b wazero.HostModuleBuilder, rfns *runtimeFns) wazero.HostMod
 			return api.DecodeI32(r[0])
 		}).
 		Export("iswalnum").
+		NewFunctionBuilder().
+		WithFunc(func(ctx context.Context, c int32) int32 {
+			r, err := rfns.iswalpha.Call(ctx, uint64(c))
+			if err != nil {
+				panic(fmt.Errorf("treesitter: iswalpha trampoline: %w", err))
+			}
+			return api.DecodeI32(r[0])
+		}).
+		Export("iswalpha").
 		NewFunctionBuilder().
 		WithFunc(func(ctx context.Context, assertion, file, line, function int32) {
 			fmt.Fprintf(os.Stderr, "[treesitter] grammar __assert_fail(%d, %d, %d, %d)\n",

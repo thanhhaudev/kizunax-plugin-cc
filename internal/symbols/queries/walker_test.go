@@ -156,3 +156,57 @@ class AuthService {
 		}
 	}
 }
+
+func TestTSQuery_ExtractsKnownSymbols(t *testing.T) {
+	ctx := context.Background()
+	r, err := treesitter.GetRuntimeForTest(ctx)
+	if err != nil {
+		t.Skipf("runtime unavailable: %v", err)
+	}
+	path := "../../../test-fixtures/tree-sitter-typescript.wasm"
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Skipf("ts grammar fixture not present: %v (run test-fixtures/fetch.sh)", err)
+	}
+	lang, err := r.LoadGrammar(ctx, "typescript", data)
+	if err != nil {
+		t.Fatalf("LoadGrammar: %v", err)
+	}
+	defer lang.Close(ctx)
+
+	// IMPORTANT: NewQuery before Parse.
+	q, err := lang.NewQuery(ctx, TypescriptTags)
+	if err != nil {
+		t.Fatalf("NewQuery: %v", err)
+	}
+	defer q.Close(ctx)
+
+	src := []byte(`
+export function classic() {}
+export class Service {}
+interface I {}
+`)
+	tree, err := lang.Parse(ctx, src)
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	defer tree.Close(ctx)
+
+	caps, err := q.Exec(ctx, tree.RootNode(ctx))
+	if err != nil {
+		t.Fatalf("Exec: %v", err)
+	}
+	syms := ScanCaptures(caps, src, "x.ts")
+
+	defSet := map[string]bool{}
+	for _, s := range syms {
+		if s.Kind == symbols.SymDef {
+			defSet[s.Name] = true
+		}
+	}
+	for _, w := range []string{"classic", "Service", "I"} {
+		if !defSet[w] {
+			t.Errorf("missing def %q in %v", w, syms)
+		}
+	}
+}

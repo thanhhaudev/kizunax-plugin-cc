@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/binary"
 	"fmt"
+	"strings"
 
 	"github.com/tetratelabs/wazero/api"
 )
@@ -39,6 +40,18 @@ type Query struct {
 //   - ts_query_capture_count(queryPtr) → count (plain return, no TRANSFER_BUFFER)
 //   - ts_query_capture_name_for_id(queryPtr, idx, TRANSFER_BUFFER) → char* ptr;
 //     length written to TRANSFER_BUFFER[0]
+//
+// Retry behaviour: some grammars compiled with older tree-sitter-cli versions
+// (e.g. tree-sitter-typescript@0.23.2, compiled with cli 0.24.4) require two
+// "warm-up" calls to ts_query_new that fail with an out-of-bounds wasm trap
+// before the dlmalloc allocator is properly initialised. We silently retry up
+// to maxQueryRetries times on OOB traps; the trap allocates the dlmalloc free
+// list, making the subsequent attempt succeed.
+// maxQueryRetries is the maximum number of ts_query_new attempts before giving
+// up. In practice some older grammars need exactly 3 OOB failures before the
+// dlmalloc free list is primed; 5 covers that with margin.
+const maxQueryRetries = 5
+
 func (l *Language) NewQuery(ctx context.Context, source string) (*Query, error) {
 	r := l.rt
 	mem := r.mem
@@ -69,16 +82,30 @@ func (l *Language) NewQuery(ctx context.Context, source string) (*Query, error) 
 	if queryNewFn == nil {
 		return nil, fmt.Errorf("treesitter: ts_query_new not exported")
 	}
-	qr, err := queryNewFn.Call(ctx,
-		uint64(l.langPtr),
-		uint64(srcPtr),
-		srcLen,
-		uint64(r.transferBuf),           // errOffsetPtr → TRANSFER_BUFFER
-		uint64(r.transferBuf+sizeOfInt), // errTypePtr   → TRANSFER_BUFFER + 4
-	)
-	if err != nil {
-		return nil, fmt.Errorf("treesitter: ts_query_new: %w", err)
+
+	// Retry loop: grammars compiled with older tree-sitter-cli (e.g. 0.24.x)
+	// may trigger an out-of-bounds wasm trap on the first 1–2 ts_query_new calls.
+	// Each trap performs enough allocations to prime the dlmalloc free list so
+	// that the subsequent attempt succeeds. We retry on OOB traps only.
+	var qr []uint64
+	for attempt := 1; ; attempt++ {
+		var callErr error
+		qr, callErr = queryNewFn.Call(ctx,
+			uint64(l.langPtr),
+			uint64(srcPtr),
+			srcLen,
+			uint64(r.transferBuf),           // errOffsetPtr → TRANSFER_BUFFER
+			uint64(r.transferBuf+sizeOfInt), // errTypePtr   → TRANSFER_BUFFER + 4
+		)
+		if callErr == nil {
+			break // success
+		}
+		if attempt >= maxQueryRetries || !strings.Contains(callErr.Error(), "out of bounds memory access") {
+			return nil, fmt.Errorf("treesitter: ts_query_new: %w", callErr)
+		}
+		// OOB trap primed the allocator; retry.
 	}
+
 	queryPtr := api.DecodeU32(qr[0])
 	if queryPtr == 0 {
 		// Read error info from TRANSFER_BUFFER.
