@@ -105,6 +105,15 @@ func Run(ctx context.Context, pluginRoot string, p provider.Provider, bundle dif
 		resp = resp2
 	}
 
+	// Canonicalize finding.File against the diff path set BEFORE the helper
+	// call so TL;DR sees the same paths the user will. LLM occasionally
+	// emits a basename; we rewrite when unambiguous and warn when not.
+	if warns := canonicalizeFindings(review.Findings, diff.Paths(bundle)); len(warns) > 0 {
+		for _, w := range warns {
+			fmt.Fprintf(os.Stderr, "[warn] %s\n", w)
+		}
+	}
+
 	// Helper TL;DR: separate single-shot call gated by finding count + flags.
 	// Any helper failure (including quota=0) → log + tldr="" + continue.
 	if shouldSummarize(opts, review.Findings) && opts.HelperCfg.BaseURL != "" && opts.HelperAPIKey != "" {
