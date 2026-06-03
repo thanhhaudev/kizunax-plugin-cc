@@ -3,13 +3,17 @@ package runner
 import (
 	"context"
 	"fmt"
+	"os"
 
 	"github.com/thanhhaudev/kizunax-plugin-cc/internal/config"
 	"github.com/thanhhaudev/kizunax-plugin-cc/internal/diff"
 	xerrors "github.com/thanhhaudev/kizunax-plugin-cc/internal/errors"
+	"github.com/thanhhaudev/kizunax-plugin-cc/internal/helper"
 	"github.com/thanhhaudev/kizunax-plugin-cc/internal/prompt"
 	"github.com/thanhhaudev/kizunax-plugin-cc/internal/provider"
 	"github.com/thanhhaudev/kizunax-plugin-cc/internal/schema"
+	"github.com/thanhhaudev/kizunax-plugin-cc/internal/state"
+	"github.com/thanhhaudev/kizunax-plugin-cc/internal/usage"
 )
 
 type Result struct {
@@ -22,9 +26,22 @@ type Result struct {
 type Options struct {
 	Mode        prompt.Mode
 	Focus       string
+	Glossary    string
 	Model       string
 	Temperature float64
 	MaxTokens   int
+
+	// Summary controls force the helper TL;DR call. Mutually exclusive at
+	// the CLI layer; if both set, NoSummary wins as a safety belt.
+	Summary   bool
+	NoSummary bool
+
+	// HelperCfg + HelperAPIKey + WorkspaceDir wire the helper call. When
+	// HelperCfg.BaseURL is empty or HelperAPIKey is empty, the runner skips
+	// the helper call entirely (no error).
+	HelperCfg    config.HelperConfig
+	HelperAPIKey string
+	WorkspaceDir state.WorkspaceDir
 }
 
 func Run(ctx context.Context, pluginRoot string, p provider.Provider, bundle diff.Bundle, opts Options) (Result, error) {
@@ -33,7 +50,7 @@ func Run(ctx context.Context, pluginRoot string, p provider.Provider, bundle dif
 		return Result{}, xerrors.Internal("load_schema", "cannot load review schema", err)
 	}
 
-	pr, err := prompt.Build(pluginRoot, opts.Mode, bundle, schemaJSON, opts.Focus)
+	pr, err := prompt.Build(pluginRoot, opts.Mode, bundle, schemaJSON, opts.Focus, opts.Glossary)
 	if err != nil {
 		return Result{}, err
 	}
@@ -88,10 +105,51 @@ func Run(ctx context.Context, pluginRoot string, p provider.Provider, bundle dif
 		resp = resp2
 	}
 
+	// Helper TL;DR: separate single-shot call gated by finding count + flags.
+	// Any helper failure (including quota=0) → log + tldr="" + continue.
+	if shouldSummarize(opts, review.Findings) && opts.HelperCfg.BaseURL != "" && opts.HelperAPIKey != "" {
+		if helperQuotaOK(opts.WorkspaceDir, opts.HelperAPIKey) {
+			tldr, hErr := helper.Summarize(ctx, opts.HelperCfg, opts.HelperAPIKey, review)
+			if hErr != nil {
+				fmt.Fprintf(os.Stderr, "[helper] summarize failed: %v\n", hErr)
+			} else {
+				review.TLDR = tldr
+			}
+		} else {
+			fmt.Fprintf(os.Stderr, "[helper] skipped: Public v1 quota exhausted\n")
+		}
+	}
+
 	return Result{
 		Review:       review,
 		InputTokens:  resp.InputTokens,
 		OutputTokens: resp.OutputTokens,
 		TotalTokens:  resp.TotalTokens,
 	}, nil
+}
+
+func shouldSummarize(opts Options, findings []schema.Finding) bool {
+	if opts.NoSummary {
+		return false
+	}
+	if opts.Summary {
+		return true
+	}
+	return len(findings) >= 3
+}
+
+// helperQuotaOK returns true unless we have cached evidence that the helper
+// key's Public v1 (credits) quota is exhausted. Cache miss → fail-open (true).
+func helperQuotaOK(ws state.WorkspaceDir, apiKey string) bool {
+	if ws.Root == "" || apiKey == "" {
+		return true
+	}
+	entry, ok := usage.LoadCachedEntry(ws, apiKey)
+	if !ok {
+		return true
+	}
+	if entry.Credits != nil && !entry.Credits.Unlimited && entry.Credits.Remaining <= 0 {
+		return false
+	}
+	return true
 }

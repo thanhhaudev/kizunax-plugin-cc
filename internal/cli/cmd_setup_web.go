@@ -13,6 +13,7 @@ import (
 	"net/url"
 	"os"
 	"os/signal"
+	"strconv"
 	"strings"
 	"sync/atomic"
 	"syscall"
@@ -185,6 +186,12 @@ func serveSetupWeb(ln net.Listener, token string) error {
 			baseURL = config.KizunaXOpenAIBaseURL
 		case "anthropic":
 			baseURL = config.KizunaXAnthropicBaseURL
+		case "helper":
+			baseURL = config.KizunaXHelperBaseURL
+			// Use the saved helper base_url if the config file has one.
+			if f, err := config.LoadFile(); err == nil && f.Helper != nil && f.Helper.BaseURL != "" {
+				baseURL = f.Helper.BaseURL
+			}
 		default:
 			writeListModelsError(w, "unknown provider")
 			return
@@ -352,6 +359,34 @@ func writeConfigFromForm(fd formData, values url.Values) error {
 		Temperature:    existing.Temperature,
 		MaxTokens:      existing.MaxTokens,
 	}
+
+	// Parse helper block fields.
+	helperBaseURL := strings.TrimSpace(values.Get("helper_base_url"))
+	helperModel := strings.TrimSpace(values.Get("helper_model"))
+	helperKeysRaw := values.Get("helper_api_keys")
+	helperTimeoutStr := strings.TrimSpace(values.Get("helper_timeout_seconds"))
+
+	helperKeys := parseKeysTextarea(helperKeysRaw)
+	helperTimeout := 0
+	if helperTimeoutStr != "" {
+		if n, perr := strconv.Atoi(helperTimeoutStr); perr == nil && n > 0 {
+			helperTimeout = n
+		}
+	}
+
+	hasHelperConfig := helperBaseURL != "" || helperModel != "" || len(helperKeys) > 0 || helperTimeout > 0
+	if hasHelperConfig {
+		out.Helper = &config.HelperConfigFile{
+			BaseURL:        helperBaseURL,
+			Model:          helperModel,
+			APIKeys:        helperKeys,
+			TimeoutSeconds: helperTimeout,
+		}
+	} else if existing.Helper != nil {
+		// Preserve existing helper config if the form didn't supply anything.
+		out.Helper = existing.Helper
+	}
+
 	if err := config.Save(out); err != nil {
 		return fmt.Errorf("cannot save config: %v", err)
 	}
@@ -371,6 +406,8 @@ func writeListModelsFallback(w http.ResponseWriter, prov string) {
 		fallback = []string{config.DefaultOpenAIModel, "coding/kimi-k2.6"}
 	case "anthropic":
 		fallback = []string{config.DefaultAnthropicModel, "MiniMax-M2.5-highspeed"}
+	case "helper":
+		fallback = []string{config.DefaultHelperModel}
 	}
 	writeJSON(w, map[string]any{
 		"fallback": fallback,

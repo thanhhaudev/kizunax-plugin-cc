@@ -26,7 +26,11 @@ func RenderReview(r schema.ReviewResult, bundle diff.Bundle, totalTokens int, mo
 
 	sb.WriteString(fmt.Sprintf("_Target: %s_\n\n", bundle.TargetLabel))
 
-	if r.Summary != "" {
+	switch {
+	case r.TLDR != "":
+		sb.WriteString(r.TLDR)
+		sb.WriteString("\n\n")
+	case r.Summary != "":
 		sb.WriteString(r.Summary)
 		sb.WriteString("\n\n")
 	}

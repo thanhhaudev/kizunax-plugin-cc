@@ -133,3 +133,35 @@ func TestParse_FullExample(t *testing.T) {
 		t.Errorf("next_steps count = %d", len(r.NextSteps))
 	}
 }
+
+func TestParse_TLDR_NotPopulatedByLLM(t *testing.T) {
+	raw := `{
+		"verdict": "approve",
+		"summary": "model summary",
+		"findings": [],
+		"next_steps": []
+	}`
+	r, err := Parse(raw)
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	if r.TLDR != "" {
+		t.Fatalf("TLDR must default to empty (runner-populated, not LLM), got %q", r.TLDR)
+	}
+}
+
+func TestParse_TLDR_IgnoresLLMField(t *testing.T) {
+	// Even if a malicious/confused LLM stuffs a tldr field, it must NOT be
+	// deserialized — the json:"-" tag is the guarantee.
+	raw := `{
+		"verdict": "approve",
+		"summary": "s",
+		"tldr": "should be ignored",
+		"findings": [],
+		"next_steps": []
+	}`
+	r, _ := Parse(raw)
+	if r.TLDR != "" {
+		t.Fatalf("LLM must not populate TLDR; got %q", r.TLDR)
+	}
+}

@@ -27,4 +27,8 @@ const (
 	HTTPTimeout = 120 * time.Second
 
 	RotationRoundRobin = "round-robin"
+
+	KizunaXHelperBaseURL        = "https://kizunax.io/api/v1"
+	DefaultHelperModel          = "qwen3.5-flash"
+	DefaultHelperTimeoutSeconds = 30
 )

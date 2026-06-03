@@ -9,6 +9,47 @@ import (
 	"github.com/thanhhaudev/kizunax-plugin-cc/internal/usage"
 )
 
+func TestDedupeUsageKeys_IncludesHelperKey_WhenDistinct(t *testing.T) {
+	got := dedupeUsageKeys([]string{"kx_provider"}, []string{"kx_helper"})
+	if len(got) != 2 {
+		t.Fatalf("expected 2 keys, got %d (%v)", len(got), got)
+	}
+	if got[0] != "kx_provider" {
+		t.Fatalf("provider key should be first, got %v", got)
+	}
+	if got[1] != "kx_helper" {
+		t.Fatalf("helper key should be second, got %v", got)
+	}
+}
+
+func TestDedupeUsageKeys_DedupesWhenHelperReusesProviderKey(t *testing.T) {
+	got := dedupeUsageKeys([]string{"kx_shared"}, []string{"kx_shared"})
+	if len(got) != 1 || got[0] != "kx_shared" {
+		t.Fatalf("expected single deduped key, got %v", got)
+	}
+}
+
+func TestDedupeUsageKeys_SkipsEmptyStrings(t *testing.T) {
+	got := dedupeUsageKeys([]string{"kx_a", ""}, []string{"", "kx_b"})
+	if len(got) != 2 {
+		t.Fatalf("expected 2 keys (empties dropped), got %v", got)
+	}
+}
+
+func TestDedupeUsageKeys_NilHelperPool(t *testing.T) {
+	got := dedupeUsageKeys([]string{"kx_a", "kx_b"}, nil)
+	if len(got) != 2 || got[0] != "kx_a" || got[1] != "kx_b" {
+		t.Fatalf("nil helper pool: got %v", got)
+	}
+}
+
+func TestDedupeUsageKeys_NilProviderPool(t *testing.T) {
+	got := dedupeUsageKeys(nil, []string{"kx_helper"})
+	if len(got) != 1 || got[0] != "kx_helper" {
+		t.Fatalf("nil provider pool: got %v", got)
+	}
+}
+
 func TestRenderUsageOutput_TwoKeys(t *testing.T) {
 	now := time.Date(2026, 6, 2, 12, 0, 0, 0, time.UTC)
 	usages := []usage.KeyUsage{

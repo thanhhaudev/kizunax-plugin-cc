@@ -30,4 +30,3 @@ func runInternalSetupWebWorker(args []string) error {
 
 	return serveSetupWeb(ln, token)
 }
-
