@@ -11,27 +11,21 @@ import (
 	"sync"
 
 	"github.com/tetratelabs/wazero"
+	api "github.com/tetratelabs/wazero/api"
 	"github.com/tetratelabs/wazero/imports/wasi_snapshot_preview1"
 )
 
 // Runtime holds the wazero runtime + the instantiated tree-sitter
 // module. Use getRuntime to obtain the process-wide singleton.
 //
-// Task 3 scope: skeleton only. Subsequent tasks fill in:
-//   - Task 4: env.wasm + got_mem.wasm instantiation
-//   - Task 5: host trampolines + runtimeFns late-binding
-//   - Task 6: web-tree-sitter.wasm runtime instantiation + ts_init
+// Tasks 3–6 complete. Subsequent tasks fill in:
 //   - Task 7: grammar loading (Language type)
 //   - Task 8: query API (Query type)
 type Runtime struct {
 	wazRt wazero.Runtime
 	rfns  *runtimeFns
-	tsMod wazeroModule // placeholder until Task 6 fills in api.Module
+	tsMod api.Module
 }
-
-// wazeroModule is a placeholder until Task 6 replaces it with api.Module.
-// This lets the package compile while the runtime is built up incrementally.
-type wazeroModule interface{}
 
 var (
 	runtimeOnce sync.Once
@@ -52,8 +46,6 @@ func getRuntime(ctx context.Context) (*Runtime, error) {
 func newRuntime(ctx context.Context) (*Runtime, error) {
 	rt := wazero.NewRuntime(ctx)
 
-	// WASI snapshot preview 1 — provides fd_write / fd_seek / fd_close
-	// that the runtime needs (rarely called in practice).
 	if _, err := wasi_snapshot_preview1.Instantiate(ctx, rt); err != nil {
 		_ = rt.Close(ctx)
 		return nil, fmt.Errorf("treesitter: wasi instantiate: %w", err)
@@ -65,7 +57,42 @@ func newRuntime(ctx context.Context) (*Runtime, error) {
 		return nil, fmt.Errorf("treesitter: host instantiate: %w", err)
 	}
 
-	return &Runtime{wazRt: rt, rfns: rfns}, nil
+	// env.wasm + GOT.mem.wasm — both must be instantiated BEFORE the
+	// runtime so its imports resolve.
+	if _, err := rt.InstantiateWithConfig(ctx, EnvWASM,
+		wazero.NewModuleConfig().WithName("env")); err != nil {
+		_ = rt.Close(ctx)
+		return nil, fmt.Errorf("treesitter: env instantiate: %w", err)
+	}
+	if _, err := rt.InstantiateWithConfig(ctx, GOTMemWASM,
+		wazero.NewModuleConfig().WithName("GOT.mem")); err != nil {
+		_ = rt.Close(ctx)
+		return nil, fmt.Errorf("treesitter: GOT.mem instantiate: %w", err)
+	}
+
+	tsMod, err := rt.InstantiateWithConfig(ctx, runtimeWASM,
+		wazero.NewModuleConfig().WithName("tree-sitter"))
+	if err != nil {
+		_ = rt.Close(ctx)
+		return nil, fmt.Errorf("treesitter: runtime instantiate: %w", err)
+	}
+
+	if err := bindRuntimeFns(rfns, tsMod); err != nil {
+		_ = rt.Close(ctx)
+		return nil, err
+	}
+
+	tsInit := tsMod.ExportedFunction("ts_init")
+	if tsInit == nil {
+		_ = rt.Close(ctx)
+		return nil, fmt.Errorf("treesitter: ts_init not exported")
+	}
+	if _, err := tsInit.Call(ctx); err != nil {
+		_ = rt.Close(ctx)
+		return nil, fmt.Errorf("treesitter: ts_init call: %w", err)
+	}
+
+	return &Runtime{wazRt: rt, rfns: rfns, tsMod: tsMod}, nil
 }
 
 // instantiateHostModule wires up the "host" module that env.wasm imports

@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/tetratelabs/wazero"
+	"github.com/tetratelabs/wazero/api"
 	"github.com/tetratelabs/wazero/imports/wasi_snapshot_preview1"
 )
 
@@ -49,5 +50,27 @@ func TestRuntime_Init_SmokeOnly(t *testing.T) {
 	}
 	if rt2 != rt {
 		t.Fatal("getRuntime did not return singleton")
+	}
+}
+
+func TestRuntime_FullInit(t *testing.T) {
+	ctx := context.Background()
+	r, err := getRuntime(ctx)
+	if err != nil {
+		t.Fatalf("getRuntime: %v", err)
+	}
+	if r.tsMod == nil {
+		t.Fatal("tsMod nil — runtime not instantiated")
+	}
+	if r.rfns.malloc == nil {
+		t.Fatal("rfns.malloc nil — bindRuntimeFns not called")
+	}
+	// Smoke: call malloc through the runtime to confirm late-binding works.
+	res, err := r.rfns.malloc.Call(ctx, 128)
+	if err != nil {
+		t.Fatalf("malloc(128): %v", err)
+	}
+	if api.DecodeI32(res[0]) == 0 {
+		t.Fatal("malloc(128) returned NULL")
 	}
 }
