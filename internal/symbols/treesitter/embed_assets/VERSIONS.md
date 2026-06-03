@@ -8,7 +8,7 @@ This directory contains binary artifacts. Sources of truth:
 | env.wasm | Compiled from `../wat/env.wat` via `scripts/rebuild-env-wasm.sh` | tracked-in-repo | ~420-800 B |
 | got_mem.wasm | Compiled from `../wat/got_mem.wat` via `scripts/rebuild-env-wasm.sh` | tracked-in-repo | ~60-80 B |
 | mem_owner.wasm | Compiled from `../wat/mem_owner.wat` via `scripts/rebuild-env-wasm.sh` | tracked-in-repo | 64 B |
-| env_grammar.wasm | Compiled from `../wat/env_grammar.wat` via `scripts/rebuild-env-wasm.sh` | tracked-in-repo | 844 B |
+| env_grammar.wasm | Compiled from `../wat/env_grammar.wat` via `scripts/rebuild-env-wasm.sh` | tracked-in-repo | 871 B |
 
 To refresh `web-tree-sitter.wasm` (e.g. on a tree-sitter security release):
 
