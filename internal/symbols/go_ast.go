@@ -48,9 +48,8 @@ func (e *GoASTExtractor) Extract(path string, content []byte) []Symbol {
 		case *ast.CallExpr:
 			switch fn := v.Fun.(type) {
 			case *ast.SelectorExpr:
-				if id, ok := fn.X.(*ast.Ident); ok {
-					add(fn.Sel.Name, id.Name, SymCall, v.Pos())
-				}
+				pkg := selectorReceiverName(fn.X)
+				add(fn.Sel.Name, pkg, SymCall, v.Pos())
 			case *ast.Ident:
 				add(fn.Name, "", SymCall, v.Pos())
 			}
@@ -58,4 +57,22 @@ func (e *GoASTExtractor) Extract(path string, content []byte) []Symbol {
 		return true
 	})
 	return syms
+}
+
+// selectorReceiverName returns the name to record as Symbol.Pkg for
+// the receiver in a SelectorExpr-based call. Handles two shapes:
+//
+//	x.Method()           → "x"
+//	x.y.Method()         → "y" (innermost SelectorExpr's Sel)
+//
+// Returns "" for anything else (e.g. f().Method, (&T{}).Method) so
+// we don't emit a misleading Pkg value.
+func selectorReceiverName(x ast.Expr) string {
+	switch n := x.(type) {
+	case *ast.Ident:
+		return n.Name
+	case *ast.SelectorExpr:
+		return n.Sel.Name
+	}
+	return ""
 }
