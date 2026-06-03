@@ -150,6 +150,35 @@ func setupCheck(providerOverride string) error {
 		}
 		fmt.Println()
 	}
+
+	// Helper (Public v1) block — v0.11+
+	fmt.Println("[helper] (Public v1)")
+	helperCfg := config.HelperConfig{
+		BaseURL:        config.KizunaXHelperBaseURL,
+		Model:          config.DefaultHelperModel,
+		TimeoutSeconds: config.DefaultHelperTimeoutSeconds,
+	}
+	if file.Helper != nil {
+		if file.Helper.BaseURL != "" {
+			helperCfg.BaseURL = file.Helper.BaseURL
+		}
+		if file.Helper.Model != "" {
+			helperCfg.Model = file.Helper.Model
+		}
+		if file.Helper.TimeoutSeconds > 0 {
+			helperCfg.TimeoutSeconds = file.Helper.TimeoutSeconds
+		}
+	}
+	fmt.Printf("  base_url: %s\n", helperCfg.BaseURL)
+	fmt.Printf("  model:    %s\n", helperCfg.Model)
+	fmt.Printf("  timeout:  %ds\n", helperCfg.TimeoutSeconds)
+	if file.Helper != nil && len(file.Helper.APIKeys) > 0 {
+		fmt.Printf("  keys:     %d configured (dedicated helper pool)\n", len(file.Helper.APIKeys))
+	} else {
+		fmt.Printf("  keys:     reuse provider pool (%d)\n", len(file.APIKeys))
+	}
+	fmt.Println()
+
 	return nil
 }
 

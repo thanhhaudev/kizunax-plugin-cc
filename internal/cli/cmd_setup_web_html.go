@@ -64,6 +64,26 @@ const setupFormHTML = `<!DOCTYPE html>
       <p class="hint">Random rotation will arrive in a later release.</p>
     </fieldset>
 
+    <details style="margin-top: 1em;">
+      <summary><strong>Advanced: helper (Public v1)</strong></summary>
+      <fieldset style="margin-top: 0.75rem;">
+        <legend>Helper settings</legend>
+        <p class="hint">Helper handles short auxiliary calls (TL;DR summaries, etc.). Defaults are fine for most users.</p>
+
+        <label for="helper_base_url">Helper base URL:</label>
+        <input type="text" id="helper_base_url" name="helper_base_url" value="https://kizunax.io/api/v1" />
+
+        <label for="helper_model">Helper model:</label>
+        <input type="text" id="helper_model" name="helper_model" value="qwen3.5-flash" />
+
+        <label for="helper_api_keys">Helper API keys (one per line — leave blank to reuse main pool):</label>
+        <textarea id="helper_api_keys" name="helper_api_keys" rows="3" placeholder="Leave blank to reuse the keys above"></textarea>
+
+        <label for="helper_timeout_seconds">Helper timeout (seconds):</label>
+        <input type="number" id="helper_timeout_seconds" name="helper_timeout_seconds" value="30" min="5" max="120" />
+      </fieldset>
+    </details>
+
     <button type="submit">Save</button>
   </form>
 
