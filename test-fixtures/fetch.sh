@@ -23,3 +23,11 @@ if [[ ! -f "$TS_PKG.wasm" ]]; then
   curl -sSL -o "$TS_PKG.wasm" "https://unpkg.com/$TS_PKG@$TS_VER/tree-sitter-typescript.wasm"
   echo "wrote $TS_PKG.wasm ($(wc -c < "$TS_PKG.wasm") bytes)"
 fi
+
+PY_VER="0.23.6"
+PY_PKG="tree-sitter-python"
+if [[ ! -f "$PY_PKG.wasm" ]]; then
+  echo "fetching $PY_PKG@$PY_VER..."
+  curl -sSL -o "$PY_PKG.wasm" "https://unpkg.com/$PY_PKG@$PY_VER/tree-sitter-python.wasm"
+  echo "wrote $PY_PKG.wasm ($(wc -c < "$PY_PKG.wasm") bytes)"
+fi

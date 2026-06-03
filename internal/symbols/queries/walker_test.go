@@ -157,6 +157,73 @@ class AuthService {
 	}
 }
 
+// TestPythonQuery_ExtractsKnownSymbols verifies that the Python grammar
+// pipeline — LoadGrammar → Parse → WalkNamedChildren — extracts the 4
+// known definitions from a small Python fixture.
+//
+// Python uses cursor-based tree walking (WalkNamedChildren) instead of
+// NewQuery+Exec because tree-sitter-python@0.23.x with web-tree-sitter
+// 0.26.9 causes ts_query_new to corrupt the runtime's dlmalloc when the
+// grammar is small (430 KB). This is the same pipeline used by the
+// production wasm.go extractPythonViaWalk path.
+//
+// Note: NewQuery BEFORE Parse is still the contract for grammars that use
+// it (PHP, TypeScript). Python bypasses that contract entirely.
+func TestPythonQuery_ExtractsKnownSymbols(t *testing.T) {
+	ctx := context.Background()
+	r, err := treesitter.GetRuntimeForTest(ctx)
+	if err != nil {
+		t.Skipf("runtime: %v", err)
+	}
+	path := "../../../test-fixtures/tree-sitter-python.wasm"
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Skipf("python grammar fixture not present: %v", err)
+	}
+	lang, err := r.LoadGrammar(ctx, "python", data)
+	if err != nil {
+		t.Fatalf("LoadGrammar: %v", err)
+	}
+	defer lang.Close(ctx)
+
+	// Look up symbol IDs and the "name" field ID — same as extractPythonViaWalk.
+	fnDefID := lang.SymbolIDForName(ctx, "function_definition", true)
+	classDefID := lang.SymbolIDForName(ctx, "class_definition", true)
+	nameFieldID := lang.FieldIDForName(ctx, "name")
+
+	src := []byte(`
+def login(): pass
+async def refresh(): pass
+class AuthService:
+    def authenticate(self): pass
+`)
+
+	// Parse the source (no NewQuery before Parse since we use WalkNamedChildren).
+	tree, err := lang.Parse(ctx, src)
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	defer tree.Close(ctx)
+
+	// Walk the tree to extract named definitions.
+	defs, err := lang.WalkNamedChildren(ctx, tree, []uint16{fnDefID, classDefID}, nameFieldID)
+	if err != nil {
+		t.Fatalf("WalkNamedChildren: %v", err)
+	}
+
+	defSet := map[string]bool{}
+	for _, d := range defs {
+		if d.NameEnd > d.NameStart && int(d.NameEnd) <= len(src) {
+			defSet[string(src[d.NameStart:d.NameEnd])] = true
+		}
+	}
+	for _, w := range []string{"login", "refresh", "AuthService", "authenticate"} {
+		if !defSet[w] {
+			t.Errorf("missing def %q in %v", w, defs)
+		}
+	}
+}
+
 func TestTSQuery_ExtractsKnownSymbols(t *testing.T) {
 	ctx := context.Background()
 	r, err := treesitter.GetRuntimeForTest(ctx)

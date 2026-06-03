@@ -141,9 +141,20 @@ func (e *wasmExtractor) Extract(path string, content []byte) []Symbol {
 
 	queryStr := queryForGrammar(e.grammarName)
 	if queryStr == "" {
-		// No tags.scm shipped for this grammar yet (typescript/python land
-		// in Tasks 17/18; other grammars pending compilation in Task 14).
+		// No tags.scm shipped for this grammar yet (others pending compilation
+		// in Task 14). typescript and python are wired in Tasks 17/18.
 		return regexFallback(path, content)
+	}
+
+	// Python uses cursor-based tree walking instead of ts_query_new.
+	// tree-sitter-python@0.23.x + web-tree-sitter 0.26.9 causes ts_query_new
+	// to trigger OOB traps that corrupt the runtime's dlmalloc after prior
+	// grammar operations (PHP, TS), making all subsequent queries fail
+	// permanently. WalkNamedChildren bypasses ts_query_new entirely.
+	// pythonTags is still registered in queryForGrammar so this grammar is
+	// recognized as "supported" (queryStr != "").
+	if e.grammarName == "python" {
+		return extractPythonViaWalk(ctx, lang, content, path)
 	}
 
 	// IMPORTANT: NewQuery must be called BEFORE Parse — see Task 8 finding.
@@ -168,6 +179,58 @@ func (e *wasmExtractor) Extract(path string, content []byte) []Symbol {
 	}
 
 	return scanCaptures(caps, content, path)
+}
+
+// extractPythonViaWalk extracts Python symbols using tree cursor traversal,
+// bypassing ts_query_new which is unsafe for Python grammars after prior
+// grammar operations (see cursor.go for details).
+func extractPythonViaWalk(ctx context.Context, lang *treesitter.Language, content []byte, path string) []Symbol {
+	// Look up symbol IDs for function_definition and class_definition.
+	fnDefID := lang.SymbolIDForName(ctx, "function_definition", true)
+	classDefID := lang.SymbolIDForName(ctx, "class_definition", true)
+	if fnDefID == 0 && classDefID == 0 {
+		return regexFallback(path, content)
+	}
+
+	// Look up the "name" field ID.
+	nameFieldID := lang.FieldIDForName(ctx, "name")
+
+	// Parse the source.
+	tree, err := lang.Parse(ctx, content)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "[warn] treesitter parse python %s: %v\n", path, err)
+		return regexFallback(path, content)
+	}
+	defer tree.Close(ctx)
+
+	// Walk the tree.
+	symIDs := make([]uint16, 0, 2)
+	if fnDefID != 0 {
+		symIDs = append(symIDs, fnDefID)
+	}
+	if classDefID != 0 {
+		symIDs = append(symIDs, classDefID)
+	}
+
+	defs, err := lang.WalkNamedChildren(ctx, tree, symIDs, nameFieldID)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "[warn] treesitter walk python %s: %v\n", path, err)
+		return regexFallback(path, content)
+	}
+
+	out := make([]Symbol, 0, len(defs))
+	for _, d := range defs {
+		if d.NameStart >= d.NameEnd || int(d.NameEnd) > len(content) {
+			continue
+		}
+		name := string(content[d.NameStart:d.NameEnd])
+		if name == "" {
+			continue
+		}
+		line := lineAt(content, d.NameStart)
+		out = append(out, Symbol{Name: name, Kind: SymDef, File: path, Line: line})
+	}
+	return out
 }
 
 // regexFallback delegates to RegexExtractor for the given file, providing
@@ -267,16 +330,33 @@ const typescriptTags = `
   (identifier) @name.reference.import)
 `
 
+// pythonTags is the tags.scm query for Python (mirrors queries.PythonTags).
+// Inlined here to avoid an import cycle: symbols → symbols/queries → symbols.
+//
+// NOTE: Python's production extraction path (extractPythonViaWalk) bypasses
+// ts_query_new entirely and uses tree cursor traversal instead. This const
+// is kept so queryForGrammar("python") returns non-empty, marking Python as
+// a "supported" grammar (non-empty → proceed; "" → regex fallback).
+//
+// Background: tree-sitter-python@0.23.x with web-tree-sitter 0.26.9 causes
+// ts_query_new to trigger OOB traps that corrupt the runtime's dlmalloc after
+// prior grammar operations, making all subsequent queries fail permanently.
+const pythonTags = `
+(function_definition) @name.definition.function
+
+(class_definition) @name.definition.class
+`
+
 // queryForGrammar returns the tags.scm query string for the given grammar
-// name. Returns "" for grammars not yet wired (python in Task 18; others
-// pending).
+// name. Returns "" for grammars not yet wired (others pending).
 func queryForGrammar(name string) string {
 	switch name {
 	case "php":
 		return phpTags
 	case "typescript", "tsx":
 		return typescriptTags
-		// "python" lands in Task 18.
+	case "python":
+		return pythonTags
 	}
 	return ""
 }
