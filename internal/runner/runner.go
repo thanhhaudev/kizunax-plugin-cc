@@ -86,7 +86,7 @@ func Run(ctx context.Context, pluginRoot string, p provider.Provider, bundle dif
 				}
 				budget := computePromptBudget(bundle, opts.Glossary, schemaJSON)
 				before := len(bundle.Warnings)
-				bundle = diff.AttachReferenced(bundle, toReferenceInputs(refs), budget)
+				diff.AttachReferenced(&bundle, toReferenceInputs(refs), budget)
 				if opts.Verbose {
 					fmt.Fprintf(os.Stderr, "[verbose] bundle: %d referenced files attached (budget=%d bytes)\n", len(bundle.ReferencedFiles), budget)
 				}
