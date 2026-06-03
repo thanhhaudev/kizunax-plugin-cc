@@ -64,12 +64,12 @@ type File struct {
 
 // Config is the runtime-resolved single-provider effective config.
 type Config struct {
-	Provider    string
-	BaseURL     string
-	Model       string
-	APIKey      string
-	Temperature float64
-	MaxTokens   int
+	Provider     string
+	BaseURL      string
+	Model        string
+	APIKey       string
+	Temperature  float64
+	MaxTokens    int
 	Helper       HelperConfig
 	HelperAPIKey string
 }
