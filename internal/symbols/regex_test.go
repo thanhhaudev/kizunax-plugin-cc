@@ -102,6 +102,57 @@ func TestLangPatterns_HasDefaultEntry(t *testing.T) {
 	}
 }
 
+func TestRegexExtractor_PHP(t *testing.T) {
+	src := []byte(`<?php
+namespace App\Auth;
+
+use App\Db\Connection;
+use App\Logger as Log;
+
+class AuthService {
+    public function login(string $username) {
+        $row = $this->db->fetchRow($username);
+        Connection::open();
+        return $row;
+    }
+
+    private function validate($input) {
+        return $input;
+    }
+}
+`)
+	got := (&RegexExtractor{lang: "php"}).Extract("auth.php", src)
+
+	want := map[string]bool{
+		"def:AuthService":      false,
+		"def:login":            false,
+		"def:validate":         false,
+		"import:Connection":    false,
+		"import:Log":           false,
+		"call:db.fetchRow":     false,
+		"call:Connection.open": false,
+	}
+	for _, s := range got {
+		var key string
+		switch s.Kind {
+		case SymDef:
+			key = "def:" + s.Name
+		case SymImport:
+			key = "import:" + s.Name
+		case SymCall:
+			key = "call:" + s.Pkg + "." + s.Name
+		}
+		if _, ok := want[key]; ok {
+			want[key] = true
+		}
+	}
+	for k, ok := range want {
+		if !ok {
+			t.Errorf("missing expected symbol: %s — got %+v", k, got)
+		}
+	}
+}
+
 func TestRegexExtractor_DefaultLang_PreservesV012Behavior(t *testing.T) {
 	src := []byte("func Foo() {}\nimport \"bar/baz\"\npkg.Method()\n")
 	got := (&RegexExtractor{lang: "default"}).Extract("x.unknown", src)

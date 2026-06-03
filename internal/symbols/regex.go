@@ -53,6 +53,27 @@ var langPatterns = map[string]patternSet{
 		imports: []*regexp.Regexp{importRe},
 		calls:   []*regexp.Regexp{callRe},
 	},
+	"php": {
+		defs: []*regexp.Regexp{
+			// function (with optional visibility/abstract/static/final)
+			regexp.MustCompile(`(?:public\s+|private\s+|protected\s+|static\s+|final\s+|abstract\s+)*function\s+([A-Za-z_]\w*)`),
+			// class / interface / trait / enum
+			regexp.MustCompile(`(?:abstract\s+|final\s+)*(?:class|interface|trait|enum)\s+([A-Za-z_]\w*)`),
+		},
+		imports: []*regexp.Regexp{
+			// use App\Foo\Bar;          → capture "Bar"
+			// use App\Foo\Bar as Baz;   → capture "Baz" via the alias group
+			regexp.MustCompile(`\buse\s+(?:function\s+|const\s+)?(?:\\?[A-Za-z_]\w*(?:\\[A-Za-z_]\w*)*\\)?([A-Za-z_]\w*)(?:\s+as\s+([A-Za-z_]\w*))?\s*;`),
+		},
+		calls: []*regexp.Regexp{
+			// Class::method(
+			regexp.MustCompile(`\b([A-Za-z_]\w*)::([A-Za-z_]\w*)\s*\(`),
+			// $obj->method( — receiver var + method
+			regexp.MustCompile(`\$([A-Za-z_]\w*)->([A-Za-z_]\w*)\s*\(`),
+			// ->intermediate->method( — chained terminal ($this->db->fetchRow())
+			regexp.MustCompile(`->([A-Za-z_]\w*)->([A-Za-z_]\w*)\s*\(`),
+		},
+	},
 }
 
 func (e *RegexExtractor) Extract(path string, content []byte) []Symbol {
@@ -85,15 +106,30 @@ func (e *RegexExtractor) Extract(path string, content []byte) []Symbol {
 			}
 		}
 		for _, re := range ps.imports {
-			if m := re.FindSubmatch(line); m != nil {
-				syms = append(syms, Symbol{
-					Name: string(m[1]),
-					Kind: SymImport,
-					File: path,
-					Line: lineNo,
-				})
+			m := re.FindSubmatch(line)
+			if m == nil {
+				continue
+			}
+			// Pick the last non-empty capture group so patterns with an
+			// optional alias group (e.g. PHP "use X as Y") emit "Y"
+			// while single-group patterns still emit group 1.
+			name := ""
+			for i := len(m) - 1; i >= 1; i-- {
+				if len(m[i]) > 0 {
+					name = string(m[i])
+					break
+				}
+			}
+			if name == "" {
 				break
 			}
+			syms = append(syms, Symbol{
+				Name: name,
+				Kind: SymImport,
+				File: path,
+				Line: lineNo,
+			})
+			break
 		}
 		for _, re := range ps.calls {
 			for _, m := range re.FindAllSubmatch(line, -1) {
