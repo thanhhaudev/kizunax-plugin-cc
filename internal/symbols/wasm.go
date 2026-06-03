@@ -6,9 +6,10 @@ import (
 	"embed"
 	"path/filepath"
 
-	// wazero is the pure-Go WebAssembly runtime used in v0.12.1 to execute
-	// tree-sitter grammars. Imported here so the dependency is pinned in
-	// go.mod even before the WASM bridge is wired.
+	// wazero is the pure-Go WebAssembly runtime intended for tree-sitter
+	// grammar execution. Imported here so the dependency is pinned in
+	// go.mod even before the WASM bridge is wired. Per v0.12.1 scope
+	// split, full WASM extraction lands in v0.12.2.
 	_ "github.com/tetratelabs/wazero"
 )
 
@@ -80,11 +81,10 @@ func (e *wasmExtractor) Extract(path string, content []byte) []Symbol {
 		return (&RegexExtractor{lang: extToLang(filepath.Ext(path))}).Extract(path, content)
 	}
 
-	// TODO(v0.12.1): wire wazero runtime + tree-sitter parse here.
-	// For v0.12 initial ship, we fall back to regex even when grammar is
-	// present — full WASM extraction is a follow-up task once grammars
-	// are validated. This keeps v0.12 ship behavior identical to lite
-	// build until grammars are committed AND wazero bridge is wired.
+	// TODO(v0.12.2): wire wazero runtime + tree-sitter parse here.
+	// v0.12.1 keeps the regex fallback in place while per-language
+	// regex patterns deliver non-Go enrichment value. Full WASM
+	// extraction lands in v0.12.2.
 	//
 	// To enable real WASM parsing:
 	//   1. Set up wazero runtime via sync.Once (memory map grammar).
