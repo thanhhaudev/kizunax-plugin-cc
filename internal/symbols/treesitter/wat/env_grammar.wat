@@ -1,8 +1,8 @@
-;; env module — provides memory + table + globals + libc-style functions
-;; for the web-tree-sitter runtime module.
-;; Memory and table are imported from "mem_owner" so they can be shared
-;; with grammar-specific env modules.
-;; Function imports come from "host"; we re-export them under "env".
+;; env_grammar module — same as env.wat but with __memory_base = 11712.
+;; Used for grammar side modules so their data segments don't overlap
+;; with the runtime's data at address 0.
+;; Memory and table are imported from "mem_owner" (same instance as env),
+;; so all modules share the same memory.
 
 (module
   ;; Import shared memory and table from mem_owner.
@@ -30,9 +30,13 @@
   (import "host" "__assert_fail" (func $assfail     (param i32 i32 i32 i32)))
 
   (global (export "__stack_pointer") (mut i32) (i32.const 65536))
-  ;; __memory_base = 0: runtime data starts at the base of shared memory.
-  (global (export "__memory_base") i32 (i32.const 0))
-  (global (export "__table_base") i32 (i32.const 0))
+  ;; __memory_base = 11712: grammar data starts just past the runtime's
+  ;; 11676-byte data region (rounded up to 64-byte alignment).
+  (global (export "__memory_base") i32 (i32.const 11712))
+  ;; __table_base = 30: grammar table entries start after the runtime's
+  ;; 30 table entries so they don't overwrite the runtime's function table.
+  ;; The mem_owner table has 1024 entries (30 runtime + 994 for grammars).
+  (global (export "__table_base") i32 (i32.const 30))
 
   ;; Re-export memory and table from mem_owner.
   (export "memory" (memory 0))

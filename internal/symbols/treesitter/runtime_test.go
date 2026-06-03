@@ -14,7 +14,7 @@ import (
 func TestRuntime_EnvAndGOTMem_Instantiate(t *testing.T) {
 	ctx := context.Background()
 	// Build a fresh wazero runtime separately (not the singleton) so this
-	// test exercises the env + GOT.mem path in isolation.
+	// test exercises the mem_owner + env + GOT.mem path in isolation.
 	rt := wazero.NewRuntime(ctx)
 	defer rt.Close(ctx)
 	if _, err := wasi_snapshot_preview1.Instantiate(ctx, rt); err != nil {
@@ -23,6 +23,11 @@ func TestRuntime_EnvAndGOTMem_Instantiate(t *testing.T) {
 	rfns := &runtimeFns{}
 	if err := instantiateHostModule(ctx, rt, rfns); err != nil {
 		t.Fatal(err)
+	}
+	// mem_owner must be instantiated before env (env imports memory/table from it).
+	if _, err := rt.InstantiateWithConfig(ctx, MemOwnerWASM,
+		wazero.NewModuleConfig().WithName("mem_owner")); err != nil {
+		t.Fatalf("mem_owner: %v", err)
 	}
 	if _, err := rt.InstantiateWithConfig(ctx, EnvWASM,
 		wazero.NewModuleConfig().WithName("env")); err != nil {
