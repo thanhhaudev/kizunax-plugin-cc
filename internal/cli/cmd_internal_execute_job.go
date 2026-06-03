@@ -109,11 +109,12 @@ func executeJobBody(cwd string, ws state.WorkspaceDir, j *job.Job) error {
 
 	ctx := context.Background()
 	result, err := runner.Run(ctx, pluginRoot, p, bundle, runner.Options{
-		Mode:        mode,
-		Focus:       j.Request.Focus,
-		Model:       cfg.Model,
-		Temperature: cfg.Temperature,
-		MaxTokens:   cfg.MaxTokens,
+		Mode:          mode,
+		Focus:         j.Request.Focus,
+		Model:         cfg.Model,
+		Temperature:   cfg.Temperature,
+		MaxTokens:     cfg.MaxTokens,
+		WorkspaceRoot: cwd, // v0.12: enable enrichment when background worker re-runs
 	})
 	if err != nil {
 		return err

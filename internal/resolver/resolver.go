@@ -166,7 +166,8 @@ func collectTiers(ws string, tier0Dirs map[string]bool) (t0, t1, t2 []string, er
 	for d := range tier0Dirs {
 		abs := filepath.Join(ws, d)
 		tier0Set[abs] = true
-		// Tier 1 = sibling dirs of tier 0
+		// Tier 1 = files under sibling subtrees of Tier 0
+		// (i.e., file's grandparent == one of Tier 0's parents).
 		parent := filepath.Dir(abs)
 		if parent != "" {
 			tier1Set[parent] = true
