@@ -83,3 +83,58 @@ func TestInstall_Http404(t *testing.T) {
 		t.Fatal("expected 404 error")
 	}
 }
+
+func TestList_ReportsProjectAndGlobal(t *testing.T) {
+	tmp := t.TempDir()
+	t.Setenv("HOME", tmp)
+	// t.Chdir requires go1.24; use os.Chdir + manual restore for go1.21 compat.
+	orig, _ := os.Getwd()
+	if err := os.Chdir(tmp); err != nil {
+		t.Fatalf("chdir: %v", err)
+	}
+	t.Cleanup(func() { os.Chdir(orig) })
+	os.MkdirAll(filepath.Join(tmp, ".kizunax/grammars"), 0755)
+	os.WriteFile(filepath.Join(tmp, ".kizunax/grammars/php.wasm"), []byte("p"), 0644)
+
+	items, err := List()
+	if err != nil {
+		t.Fatalf("List: %v", err)
+	}
+	found := false
+	for _, it := range items {
+		if it.Lang == "php" && it.Source == "project" {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("expected php project entry in %+v", items)
+	}
+}
+
+func TestRemove_Global(t *testing.T) {
+	tmp := t.TempDir()
+	t.Setenv("HOME", tmp)
+	path := filepath.Join(tmp, ".kizunax/grammars/php.wasm")
+	os.MkdirAll(filepath.Dir(path), 0755)
+	os.WriteFile(path, []byte("x"), 0644)
+	if err := Remove("php", false); err != nil {
+		t.Fatalf("Remove: %v", err)
+	}
+	if _, err := os.Stat(path); err == nil {
+		t.Fatal("file still exists")
+	}
+}
+
+func TestRemove_NotInstalled_ReturnsError(t *testing.T) {
+	tmp := t.TempDir()
+	t.Setenv("HOME", tmp)
+	if err := Remove("php", false); err == nil {
+		t.Fatal("expected error when grammar not installed")
+	}
+}
+
+func TestRemove_UnknownLang_ReturnsError(t *testing.T) {
+	if err := Remove("unknownlang", false); err == nil {
+		t.Fatal("expected error for unknown lang")
+	}
+}
