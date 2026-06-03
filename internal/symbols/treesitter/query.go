@@ -26,6 +26,12 @@ type Query struct {
 
 // NewQuery compiles a tags.scm-style query against the language.
 //
+// IMPORTANT: NewQuery must be called BEFORE the first lang.Parse call on
+// this Language instance. ts_parser_delete leaves a dlmalloc sentinel
+// (0x5555aab8) in the free list that causes ts_query_new's internal malloc
+// to trap if called after Parse+free. The package's test fixture enforces
+// this order; callers must do the same.
+//
 // ABI notes (web-tree-sitter 0.26.9):
 //   - ts_query_new(langPtr, srcPtr, srcLen, errOffsetPtr, errTypePtr) → queryPtr
 //   - Error output pointers point into TRANSFER_BUFFER directly:
