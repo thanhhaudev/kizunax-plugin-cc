@@ -18,6 +18,21 @@ type ProviderEntry struct {
 	APIKey  string `json:"api_key,omitempty"`
 }
 
+// HelperConfigFile is the on-disk shape of the `helper` block.
+type HelperConfigFile struct {
+	BaseURL        string   `json:"base_url,omitempty"`
+	Model          string   `json:"model,omitempty"`
+	APIKeys        []string `json:"api_keys,omitempty"`
+	TimeoutSeconds int      `json:"timeout_seconds,omitempty"`
+}
+
+// HelperConfig is the runtime-resolved helper config (defaults filled).
+type HelperConfig struct {
+	BaseURL        string
+	Model          string
+	TimeoutSeconds int
+}
+
 // File is the on-disk layout. v0.6.6+ format:
 //
 //	{ "api_keys": [...], "rotation": "round-robin",
@@ -42,8 +57,9 @@ type File struct {
 	Model    string `json:"model,omitempty"`
 	APIKey   string `json:"api_key,omitempty"`
 
-	Temperature float64 `json:"temperature,omitempty"`
-	MaxTokens   int     `json:"max_tokens,omitempty"`
+	Temperature float64           `json:"temperature,omitempty"`
+	MaxTokens   int               `json:"max_tokens,omitempty"`
+	Helper      *HelperConfigFile `json:"helper,omitempty"`
 }
 
 // Config is the runtime-resolved single-provider effective config.
@@ -54,6 +70,8 @@ type Config struct {
 	APIKey      string
 	Temperature float64
 	MaxTokens   int
+	Helper       HelperConfig
+	HelperAPIKey string
 }
 
 func Defaults() Config {
@@ -63,6 +81,11 @@ func Defaults() Config {
 		Model:       DefaultAnthropicModel,
 		Temperature: DefaultTemperature,
 		MaxTokens:   DefaultMaxTokens,
+		Helper: HelperConfig{
+			BaseURL:        KizunaXHelperBaseURL,
+			Model:          DefaultHelperModel,
+			TimeoutSeconds: DefaultHelperTimeoutSeconds,
+		},
 	}
 }
 
@@ -105,6 +128,26 @@ func firstNonEmpty(values ...string) string {
 		}
 	}
 	return ""
+}
+
+var helperKeyCounter atomic.Uint64
+
+// pickHelperKey rotates through the helper-dedicated pool if set, otherwise
+// the provider pool. Uses a separate counter so helper bursts don't skew
+// provider round-robin.
+func pickHelperKey(file File) string {
+	var pool []string
+	if file.Helper != nil && len(file.Helper.APIKeys) > 0 {
+		pool = file.Helper.APIKeys
+	} else {
+		pool = file.APIKeys
+	}
+	n := uint64(len(pool))
+	if n == 0 {
+		return ""
+	}
+	i := helperKeyCounter.Add(1) - 1
+	return pool[i%n]
 }
 
 func pickKey(file File) string {
@@ -172,6 +215,28 @@ func Load(providerOverride string) (Config, error) {
 		cfg.APIKey = v
 	}
 
+	if file.Helper != nil {
+		if file.Helper.BaseURL != "" {
+			cfg.Helper.BaseURL = file.Helper.BaseURL
+		}
+		if file.Helper.Model != "" {
+			cfg.Helper.Model = file.Helper.Model
+		}
+		if file.Helper.TimeoutSeconds > 0 {
+			cfg.Helper.TimeoutSeconds = file.Helper.TimeoutSeconds
+		}
+	}
+	if v := os.Getenv("KIZUNAX_HELPER_BASE_URL"); v != "" {
+		cfg.Helper.BaseURL = v
+	}
+	if v := os.Getenv("KIZUNAX_HELPER_MODEL"); v != "" {
+		cfg.Helper.Model = v
+	}
+	cfg.HelperAPIKey = pickHelperKey(file)
+	if v := os.Getenv("KIZUNAX_HELPER_API_KEY"); v != "" {
+		cfg.HelperAPIKey = v
+	}
+
 	if cfg.APIKey == "" {
 		return cfg, xerrors.User(
 			"missing_api_key",
@@ -193,6 +258,7 @@ func Save(f File) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return err
 	}
+	// helper block is preserved as-is; only legacy fields are blanked.
 	// Blank legacy fields before marshal so they're dropped via omitempty.
 	f.DefaultProvider = ""
 	f.OpenAI = nil

@@ -1,6 +1,10 @@
 package config
 
-import "testing"
+import (
+	"os"
+	"path/filepath"
+	"testing"
+)
 
 func TestDefaults_ProviderIsAnthropic(t *testing.T) {
 	d := Defaults()
@@ -99,5 +103,110 @@ func TestModelMaxInputTokens_UnknownFallback(t *testing.T) {
 	got := ModelMaxInputTokens("some-future-model-3.5")
 	if got != 100000 {
 		t.Errorf("unknown model = %d, want 100000 fallback", got)
+	}
+}
+
+func TestDefaults_HelperHasBaseURLAndModel(t *testing.T) {
+	d := Defaults()
+	if d.Helper.BaseURL != KizunaXHelperBaseURL {
+		t.Fatalf("helper base url: got %q want %q", d.Helper.BaseURL, KizunaXHelperBaseURL)
+	}
+	if d.Helper.Model != DefaultHelperModel {
+		t.Fatalf("helper model: got %q want %q", d.Helper.Model, DefaultHelperModel)
+	}
+	if d.Helper.TimeoutSeconds != DefaultHelperTimeoutSeconds {
+		t.Fatalf("helper timeout: got %d want %d", d.Helper.TimeoutSeconds, DefaultHelperTimeoutSeconds)
+	}
+}
+
+func TestLoad_HelperKeyReusesProviderPool_WhenHelperKeysEmpty(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("HOME", dir)
+	mustWriteConfig(t, dir, `{
+		"api_keys": ["kx_a", "kx_b"],
+		"openai_model": "m",
+		"anthropic_model": "m",
+		"helper": { "model": "qwen3.5-flash" }
+	}`)
+
+	cfg, err := Load("")
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	if cfg.HelperAPIKey != "kx_a" && cfg.HelperAPIKey != "kx_b" {
+		t.Fatalf("helper key should reuse provider pool, got %q", cfg.HelperAPIKey)
+	}
+}
+
+func TestLoad_HelperKeyUsesDedicatedPool_WhenHelperKeysSet(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("HOME", dir)
+	mustWriteConfig(t, dir, `{
+		"api_keys": ["kx_provider"],
+		"openai_model": "m",
+		"anthropic_model": "m",
+		"helper": { "api_keys": ["kx_helper"] }
+	}`)
+
+	cfg, _ := Load("")
+	if cfg.HelperAPIKey != "kx_helper" {
+		t.Fatalf("helper key should be dedicated kx_helper, got %q", cfg.HelperAPIKey)
+	}
+	if cfg.APIKey != "kx_provider" {
+		t.Fatalf("provider key should stay kx_provider, got %q", cfg.APIKey)
+	}
+}
+
+func TestLoad_HelperBaseURLEnvOverride(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("HOME", dir)
+	t.Setenv("KIZUNAX_HELPER_BASE_URL", "http://localhost:1234/v1")
+	mustWriteConfig(t, dir, `{"api_keys": ["kx_a"], "anthropic_model": "m"}`)
+
+	cfg, _ := Load("")
+	if cfg.Helper.BaseURL != "http://localhost:1234/v1" {
+		t.Fatalf("env override ignored: got %q", cfg.Helper.BaseURL)
+	}
+}
+
+func TestSaveLoad_HelperBlockRoundtrip(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("HOME", dir)
+
+	in := File{
+		APIKeys:        []string{"kx_a"},
+		AnthropicModel: "m",
+		Helper: &HelperConfigFile{
+			BaseURL:        "http://example.invalid/v1",
+			Model:          "qwen3.5-flash",
+			APIKeys:        []string{"kx_helper"},
+			TimeoutSeconds: 45,
+		},
+	}
+	if err := Save(in); err != nil {
+		t.Fatalf("save: %v", err)
+	}
+	out, err := LoadFile()
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	if out.Helper == nil {
+		t.Fatalf("helper block lost")
+	}
+	if out.Helper.BaseURL != "http://example.invalid/v1" ||
+		out.Helper.Model != "qwen3.5-flash" ||
+		len(out.Helper.APIKeys) != 1 || out.Helper.APIKeys[0] != "kx_helper" ||
+		out.Helper.TimeoutSeconds != 45 {
+		t.Fatalf("helper roundtrip mismatch: %+v", out.Helper)
+	}
+}
+
+func mustWriteConfig(t *testing.T, home, body string) {
+	t.Helper()
+	if err := os.MkdirAll(filepath.Join(home, ".kizunax"), 0o700); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(home, ".kizunax", "config.json"), []byte(body), 0o600); err != nil {
+		t.Fatalf("write: %v", err)
 	}
 }
