@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/thanhhaudev/kizunax-plugin-cc/internal/config"
 	"github.com/thanhhaudev/kizunax-plugin-cc/internal/diff"
@@ -11,8 +12,10 @@ import (
 	"github.com/thanhhaudev/kizunax-plugin-cc/internal/helper"
 	"github.com/thanhhaudev/kizunax-plugin-cc/internal/prompt"
 	"github.com/thanhhaudev/kizunax-plugin-cc/internal/provider"
+	"github.com/thanhhaudev/kizunax-plugin-cc/internal/resolver"
 	"github.com/thanhhaudev/kizunax-plugin-cc/internal/schema"
 	"github.com/thanhhaudev/kizunax-plugin-cc/internal/state"
+	"github.com/thanhhaudev/kizunax-plugin-cc/internal/symbols"
 	"github.com/thanhhaudev/kizunax-plugin-cc/internal/usage"
 )
 
@@ -42,12 +45,39 @@ type Options struct {
 	HelperCfg    config.HelperConfig
 	HelperAPIKey string
 	WorkspaceDir state.WorkspaceDir
+
+	// v0.12+: workspace root for pre-flight enrichment.
+	// When empty, enrichment is skipped (review proceeds with diff-only).
+	WorkspaceRoot string
 }
 
 func Run(ctx context.Context, pluginRoot string, p provider.Provider, bundle diff.Bundle, opts Options) (Result, error) {
 	schemaJSON, err := schema.LoadSchemaJSON(pluginRoot)
 	if err != nil {
 		return Result{}, xerrors.Internal("load_schema", "cannot load review schema", err)
+	}
+
+	// v0.12: pre-flight enrichment — scan diff symbols, look up definitions
+	// in the workspace, attach as referenced files (capped at 256 KiB total).
+	// Enrichment is strictly additive: any failure → empty referenced files,
+	// main review proceeds.
+	if opts.WorkspaceRoot != "" && (len(bundle.Diff) > 0 || len(bundle.Untracked) > 0) {
+		syms := symbols.ExtractFromBundle(bundle)
+		if len(syms) > 0 {
+			diffPaths := diff.Paths(bundle)
+			refs, rerr := resolver.FindReferences(syms, opts.WorkspaceRoot, diffPaths, 5, 8*1024)
+			if rerr != nil {
+				fmt.Fprintf(os.Stderr, "[warn] resolver: %v\n", rerr)
+			} else {
+				budget := computePromptBudget(bundle, opts.Glossary, schemaJSON)
+				bundle = diff.AttachReferenced(bundle, toReferenceInputs(refs), budget)
+				for _, w := range bundle.Warnings {
+					if strings.HasPrefix(w, "referenced files dropped") {
+						fmt.Fprintf(os.Stderr, "[warn] %s\n", w)
+					}
+				}
+			}
+		}
 	}
 
 	pr, err := prompt.Build(pluginRoot, opts.Mode, bundle, schemaJSON, opts.Focus, opts.Glossary)
@@ -145,6 +175,33 @@ func shouldSummarize(opts Options, findings []schema.Finding) bool {
 		return true
 	}
 	return len(findings) >= 3
+}
+
+// toReferenceInputs converts resolver.Reference to diff.ReferenceInput,
+// crossing the package boundary without creating an import cycle.
+func toReferenceInputs(refs []resolver.Reference) []diff.ReferenceInput {
+	out := make([]diff.ReferenceInput, len(refs))
+	for i, r := range refs {
+		out[i] = diff.ReferenceInput{
+			Path:    r.File,
+			Excerpt: r.Excerpt,
+			Symbols: []string{r.Symbol.Name},
+		}
+	}
+	return out
+}
+
+// computePromptBudget returns the remaining bytes available for referenced
+// files after accounting for diff, glossary, schema, and template overhead.
+// Negative results return 0 (no enrichment possible).
+func computePromptBudget(b diff.Bundle, glossary, schemaJSON string) int {
+	const totalCap = 256 * 1024
+	const overheadGuess = 1024
+	used := len(b.Diff) + len(glossary) + len(schemaJSON) + overheadGuess
+	if used >= totalCap {
+		return 0
+	}
+	return totalCap - used
 }
 
 // helperQuotaOK returns true unless we have cached evidence that the helper
