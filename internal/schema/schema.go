@@ -14,6 +14,10 @@ type ReviewResult struct {
 	Summary   string    `json:"summary"`
 	Findings  []Finding `json:"findings"`
 	NextSteps []string  `json:"next_steps"`
+
+	// TLDR is populated by the runner (helper call), NOT the main LLM JSON.
+	// json:"-" ensures the LLM cannot inject it.
+	TLDR string `json:"-"`
 }
 
 type Finding struct {
