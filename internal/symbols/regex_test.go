@@ -101,3 +101,35 @@ func TestLangPatterns_HasDefaultEntry(t *testing.T) {
 		t.Fatalf("default patternSet must have defs/imports/calls populated: %+v", ps)
 	}
 }
+
+func TestRegexExtractor_DefaultLang_PreservesV012Behavior(t *testing.T) {
+	src := []byte("func Foo() {}\nimport \"bar/baz\"\npkg.Method()\n")
+	got := (&RegexExtractor{lang: "default"}).Extract("x.unknown", src)
+
+	var hasDef, hasImp, hasCall bool
+	for _, s := range got {
+		switch s.Kind {
+		case SymDef:
+			if s.Name == "Foo" {
+				hasDef = true
+			}
+		case SymImport:
+			if s.Name == "bar/baz" {
+				hasImp = true
+			}
+		case SymCall:
+			if s.Pkg == "pkg" && s.Name == "Method" {
+				hasCall = true
+			}
+		}
+	}
+	if !hasDef || !hasImp || !hasCall {
+		t.Fatalf("default lang must yield def+import+call: %+v", got)
+	}
+
+	// Empty lang must behave identically to "default".
+	gotEmpty := (&RegexExtractor{}).Extract("x.unknown", src)
+	if len(gotEmpty) != len(got) {
+		t.Fatalf("empty lang must equal default lang: got %d vs %d", len(gotEmpty), len(got))
+	}
+}

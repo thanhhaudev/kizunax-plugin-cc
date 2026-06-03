@@ -9,10 +9,11 @@ import (
 // RegexExtractor is the universal fallback extractor.
 // Used for any non-Go file when WASM grammar is unavailable
 // (either no grammar bundled, or building with -tags lite).
-// Patterns are intentionally permissive — false positives at extraction
-// are filtered later by the resolver (a non-existent symbol simply yields
-// zero references during the workspace grep).
-type RegexExtractor struct{}
+// Patterns are looked up in langPatterns by the lang field
+// (set by the factory). An empty lang resolves to "default".
+type RegexExtractor struct {
+	lang string
+}
 
 // patternSet holds the regex patterns used by RegexExtractor for one
 // language. Each slice may contain multiple alternates that are tried
@@ -55,6 +56,15 @@ var langPatterns = map[string]patternSet{
 }
 
 func (e *RegexExtractor) Extract(path string, content []byte) []Symbol {
+	key := e.lang
+	if key == "" {
+		key = "default"
+	}
+	ps, ok := langPatterns[key]
+	if !ok {
+		ps = langPatterns["default"]
+	}
+
 	var syms []Symbol
 	scanner := bufio.NewScanner(bytes.NewReader(content))
 	scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
@@ -63,30 +73,38 @@ func (e *RegexExtractor) Extract(path string, content []byte) []Symbol {
 		lineNo++
 		line := scanner.Bytes()
 
-		if m := defRe.FindSubmatch(line); m != nil {
-			syms = append(syms, Symbol{
-				Name: string(m[1]),
-				Kind: SymDef,
-				File: path,
-				Line: lineNo,
-			})
+		for _, re := range ps.defs {
+			if m := re.FindSubmatch(line); m != nil {
+				syms = append(syms, Symbol{
+					Name: string(m[1]),
+					Kind: SymDef,
+					File: path,
+					Line: lineNo,
+				})
+				break
+			}
 		}
-		if m := importRe.FindSubmatch(line); m != nil {
-			syms = append(syms, Symbol{
-				Name: string(m[1]),
-				Kind: SymImport,
-				File: path,
-				Line: lineNo,
-			})
+		for _, re := range ps.imports {
+			if m := re.FindSubmatch(line); m != nil {
+				syms = append(syms, Symbol{
+					Name: string(m[1]),
+					Kind: SymImport,
+					File: path,
+					Line: lineNo,
+				})
+				break
+			}
 		}
-		for _, m := range callRe.FindAllSubmatch(line, -1) {
-			syms = append(syms, Symbol{
-				Name: string(m[2]),
-				Pkg:  string(m[1]),
-				Kind: SymCall,
-				File: path,
-				Line: lineNo,
-			})
+		for _, re := range ps.calls {
+			for _, m := range re.FindAllSubmatch(line, -1) {
+				syms = append(syms, Symbol{
+					Name: string(m[2]),
+					Pkg:  string(m[1]),
+					Kind: SymCall,
+					File: path,
+					Line: lineNo,
+				})
+			}
 		}
 	}
 	return syms
