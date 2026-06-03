@@ -97,3 +97,8 @@ Combinable:
 - `--focus "text"` — Optional focus hint
 - `--quiet` — Suppress trailing usage warning footer (for pipe / CI)
 - `--verbose` — Log timing + model name to stderr
+
+## Behavior (v0.11+)
+
+- **Glossary auto-inject**: if the workspace contains `.kizunax/glossary.md`, `docs/glossary.md`, or `GLOSSARY.md` (priority in that order), its verbatim content (capped at 16 KiB) is prepended to the system prompt so the reviewer understands project-specific terminology. No file → silently skipped.
+- **TL;DR summary**: a short executive summary is rendered at the top of the output when the review surfaces **3 or more findings**. Force on with `--summary`, force off with `--no-summary` (flags are mutually exclusive). The TL;DR replaces the model's own verbose summary in the same visual slot.
