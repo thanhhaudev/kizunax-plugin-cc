@@ -328,5 +328,56 @@ func TestRun_HelperError_TLDRStaysEmpty(t *testing.T) {
 	}
 }
 
+func TestRun_CanonicalizesBasenameFromDiff(t *testing.T) {
+	pluginRoot := setupPluginRoot(t)
+	p := &mockProvider{responses: []provider.ChatResponse{
+		{Content: `{"verdict":"needs-attention","summary":"s","findings":[
+			{"severity":"critical","title":"race","body":"b","file":"auth.go","line_start":35,"line_end":36,"confidence":0.9,"recommendation":"r"}
+		],"next_steps":[]}`},
+	}}
+
+	bundle := diff.Bundle{
+		TargetLabel: "test",
+		Diff: `diff --git a/internal/api/auth.go b/internal/api/auth.go
+index abc..def 100644
+--- a/internal/api/auth.go
++++ b/internal/api/auth.go
+@@ -1,1 +1,1 @@
+-old
++new
+`,
+	}
+	res, err := Run(context.Background(), pluginRoot, p, bundle, Options{Mode: prompt.ModeStandard, Model: "m"})
+	if err != nil {
+		t.Fatalf("run: %v", err)
+	}
+	if res.Review.Findings[0].File != "internal/api/auth.go" {
+		t.Fatalf("expected basename auth.go canonicalized to full path, got %q", res.Review.Findings[0].File)
+	}
+}
+
+func TestRun_LeavesAmbiguousBasenameAlone(t *testing.T) {
+	pluginRoot := setupPluginRoot(t)
+	p := &mockProvider{responses: []provider.ChatResponse{
+		{Content: `{"verdict":"needs-attention","summary":"s","findings":[
+			{"severity":"critical","title":"race","body":"b","file":"auth.go","line_start":1,"line_end":1,"confidence":0.9,"recommendation":"r"}
+		],"next_steps":[]}`},
+	}}
+
+	bundle := diff.Bundle{
+		TargetLabel: "test",
+		Diff: `+++ b/internal/api/auth.go
++++ b/internal/admin/auth.go
+`,
+	}
+	res, err := Run(context.Background(), pluginRoot, p, bundle, Options{Mode: prompt.ModeStandard, Model: "m"})
+	if err != nil {
+		t.Fatalf("run: %v", err)
+	}
+	if res.Review.Findings[0].File != "auth.go" {
+		t.Fatalf("ambiguous basename should stay, got %q", res.Review.Findings[0].File)
+	}
+}
+
 // suppress unused-import warnings if other helpers added later
 var _ = git.TargetWorkingTree

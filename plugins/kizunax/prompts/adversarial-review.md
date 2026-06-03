@@ -30,6 +30,8 @@ Return ONLY a JSON object matching this schema. No prose, no fences:
 
 Each finding must reference a specific file and line range from the diff.
 
+The `file` field MUST be the EXACT repo-relative path copied verbatim from the diff header (the string after `+++ b/`), NOT the basename. Two files can share a basename across different directories — using only the basename makes the finding ambiguous and unactionable. Whatever the project structure or language, copy the full path that appears in the diff.
+
 Diff to review:
 
 {{REVIEW_INPUT}}
