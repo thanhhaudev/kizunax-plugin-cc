@@ -35,6 +35,8 @@ func Dispatch(args []string) error {
 		return runHook(args[1:])
 	case "usage":
 		return runUsage(args[1:])
+	case "grammars":
+		return runGrammars(args[1:])
 	case "version", "--version", "-v":
 		fmt.Printf("kizunax %s\n", Version)
 		return nil
