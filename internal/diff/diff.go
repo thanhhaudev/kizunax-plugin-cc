@@ -12,18 +12,28 @@ import (
 )
 
 type Bundle struct {
-	TargetLabel string
-	Diff        string
-	Untracked   []UntrackedFile
-	TotalBytes  int
-	Truncated   []string
-	Warnings    []string
+	TargetLabel     string
+	Diff            string
+	Untracked       []UntrackedFile
+	TotalBytes      int
+	Truncated       []string
+	Warnings        []string
+	ReferencedFiles []ReferencedFile // v0.12+: pre-flight context
 }
 
 type UntrackedFile struct {
 	Path    string
 	Content string
 	Bytes   int
+}
+
+// ReferencedFile is a workspace file included in the prompt as context
+// because the diff references symbols defined in it. Read-only — the LLM
+// must not flag findings in referenced files.
+type ReferencedFile struct {
+	Path    string   // repo-relative
+	Excerpt string   // ≤ per-file budget
+	Symbols []string // symbol names matched here (priority sort signal)
 }
 
 func (b Bundle) IsEmpty() bool {
