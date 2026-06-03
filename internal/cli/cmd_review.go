@@ -178,6 +178,8 @@ func runReviewWithMode(args []string, mode prompt.Mode) error {
 			HelperModel:   cfg.Helper.Model,
 			HelperKeyHash: helperKeyHash(cfg.HelperAPIKey),
 			HelperKeyMask: helperKeyMask(cfg.HelperAPIKey),
+			// v0.12: paths only (privacy).
+			ReferencedFilePaths: referencedFilePathsFrom(bundle),
 		},
 		LogPath:  "",
 		Warnings: bundle.Warnings,
@@ -283,4 +285,12 @@ func parseTarget(args []string) (git.Target, error) {
 		t.Kind = git.TargetWorkingTree
 	}
 	return t, nil
+}
+
+func referencedFilePathsFrom(b diff.Bundle) []string {
+	out := make([]string, len(b.ReferencedFiles))
+	for i, r := range b.ReferencedFiles {
+		out[i] = r.Path
+	}
+	return out
 }
