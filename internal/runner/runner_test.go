@@ -3,15 +3,20 @@ package runner
 import (
 	"context"
 	"errors"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
 
+	"github.com/thanhhaudev/kizunax-plugin-cc/internal/config"
 	"github.com/thanhhaudev/kizunax-plugin-cc/internal/diff"
 	"github.com/thanhhaudev/kizunax-plugin-cc/internal/git"
 	"github.com/thanhhaudev/kizunax-plugin-cc/internal/prompt"
 	"github.com/thanhhaudev/kizunax-plugin-cc/internal/provider"
+	"github.com/thanhhaudev/kizunax-plugin-cc/internal/schema"
 )
 
 // mockProvider returns canned responses in order.
@@ -189,6 +194,131 @@ func TestRun_FocusInjected(t *testing.T) {
 	}
 	if !strings.Contains(p.lastReq.Messages[0].Content, "auth flow") {
 		t.Errorf("focus text not in prompt; got: %s", p.lastReq.Messages[0].Content)
+	}
+}
+
+func TestShouldSummarize(t *testing.T) {
+	cases := []struct {
+		name     string
+		opts     Options
+		count    int
+		expected bool
+	}{
+		{"no findings, default", Options{}, 0, false},
+		{"1 finding, default", Options{}, 1, false},
+		{"2 findings, default", Options{}, 2, false},
+		{"3 findings, default", Options{}, 3, true},
+		{"5 findings, default", Options{}, 5, true},
+		{"NoSummary wins over count", Options{NoSummary: true}, 5, false},
+		{"Summary forces on 1 finding", Options{Summary: true}, 1, true},
+		{"Summary forces on 0 findings", Options{Summary: true}, 0, true},
+		{"NoSummary beats Summary", Options{Summary: true, NoSummary: true}, 5, false},
+		{"NoSummary at 0 findings", Options{NoSummary: true}, 0, false},
+		{"Summary at 2 findings", Options{Summary: true}, 2, true},
+		{"default at 3 findings", Options{}, 3, true},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			findings := make([]schema.Finding, c.count)
+			if got := shouldSummarize(c.opts, findings); got != c.expected {
+				t.Fatalf("got %v want %v", got, c.expected)
+			}
+		})
+	}
+}
+
+func TestRun_HelperCalled_WhenGated(t *testing.T) {
+	var helperCalled int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		atomic.AddInt32(&helperCalled, 1)
+		_, _ = w.Write([]byte(`{"choices":[{"message":{"content":"executive tl;dr"}}]}`))
+	}))
+	defer srv.Close()
+
+	pluginRoot := setupPluginRoot(t)
+	p := &mockProvider{responses: []provider.ChatResponse{
+		{Content: `{"verdict":"needs-attention","summary":"s","findings":[
+			{"severity":"critical","title":"x","body":"b","file":"f","line_start":1,"line_end":1,"confidence":0.5,"recommendation":"r"},
+			{"severity":"high","title":"y","body":"b","file":"f","line_start":2,"line_end":2,"confidence":0.5,"recommendation":"r"},
+			{"severity":"medium","title":"z","body":"b","file":"f","line_start":3,"line_end":3,"confidence":0.5,"recommendation":"r"}
+		],"next_steps":[]}`,
+		},
+	}}
+
+	opts := Options{
+		Mode:         prompt.ModeStandard,
+		Model:        "MiniMax-M2.7-highspeed",
+		HelperCfg:    config.HelperConfig{BaseURL: srv.URL, Model: "qwen3.5-flash", TimeoutSeconds: 5},
+		HelperAPIKey: "kx_test",
+	}
+	res, err := Run(context.Background(), pluginRoot, p, diff.Bundle{TargetLabel: "t"}, opts)
+	if err != nil {
+		t.Fatalf("run: %v", err)
+	}
+	if atomic.LoadInt32(&helperCalled) != 1 {
+		t.Fatalf("expected helper called once, got %d", helperCalled)
+	}
+	if res.Review.TLDR != "executive tl;dr" {
+		t.Fatalf("expected TLDR populated, got %q", res.Review.TLDR)
+	}
+}
+
+func TestRun_HelperSkipped_WhenNoSummary(t *testing.T) {
+	var helperCalled int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		atomic.AddInt32(&helperCalled, 1)
+	}))
+	defer srv.Close()
+
+	pluginRoot := setupPluginRoot(t)
+	p := &mockProvider{responses: []provider.ChatResponse{
+		{Content: `{"verdict":"approve","summary":"","findings":[],"next_steps":[]}`},
+	}}
+
+	opts := Options{
+		Mode:         prompt.ModeStandard,
+		Model:        "MiniMax-M2.7-highspeed",
+		NoSummary:    true,
+		HelperCfg:    config.HelperConfig{BaseURL: srv.URL, Model: "m", TimeoutSeconds: 5},
+		HelperAPIKey: "kx_test",
+	}
+	if _, err := Run(context.Background(), pluginRoot, p, diff.Bundle{TargetLabel: "t"}, opts); err != nil {
+		t.Fatalf("run: %v", err)
+	}
+	if atomic.LoadInt32(&helperCalled) != 0 {
+		t.Fatalf("helper must not be called with NoSummary, got %d", helperCalled)
+	}
+}
+
+func TestRun_HelperError_TLDRStaysEmpty(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(500)
+		_, _ = w.Write([]byte(`{"message":"upstream down"}`))
+	}))
+	defer srv.Close()
+
+	pluginRoot := setupPluginRoot(t)
+	p := &mockProvider{responses: []provider.ChatResponse{
+		{Content: `{"verdict":"needs-attention","summary":"","findings":[
+			{"severity":"critical","title":"x","body":"b","file":"f","line_start":1,"line_end":1,"confidence":0.5,"recommendation":"r"},
+			{"severity":"high","title":"y","body":"b","file":"f","line_start":2,"line_end":2,"confidence":0.5,"recommendation":"r"},
+			{"severity":"low","title":"z","body":"b","file":"f","line_start":3,"line_end":3,"confidence":0.5,"recommendation":"r"}
+		],"next_steps":[]}`,
+		},
+	}}
+
+	opts := Options{
+		Mode:         prompt.ModeStandard,
+		Model:        "MiniMax-M2.7-highspeed",
+		HelperCfg:    config.HelperConfig{BaseURL: srv.URL, Model: "m", TimeoutSeconds: 5},
+		HelperAPIKey: "kx_test",
+	}
+	res, err := Run(context.Background(), pluginRoot, p, diff.Bundle{TargetLabel: "t"}, opts)
+	if err != nil {
+		t.Fatalf("helper failure must NOT fail Run: %v", err)
+	}
+	if res.Review.TLDR != "" {
+		t.Fatalf("TLDR must be empty after helper error, got %q", res.Review.TLDR)
 	}
 }
 
