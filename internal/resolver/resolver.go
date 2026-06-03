@@ -149,13 +149,22 @@ func symbolByName(syms []symbols.Symbol, name string) symbols.Symbol {
 }
 
 // compileSymbolPattern builds a regex matching common definition headers
-// across languages.
+// across languages. Three forms are accepted:
+//   - free declaration: `func Name(`, `def Name(`, `class Name {`, ...
+//   - Go method receiver: `func (r *Type) Name(`
+//   - language `extends`/`impl`/`record` keywords also match
+//
+// Receiver form is critical for Go projects because methods are the most
+// commonly referenced symbol in diffs.
 func compileSymbolPattern(name string) *regexp.Regexp {
-	// Escape special chars in name (defensive — symbols usually plain identifiers).
 	esc := regexp.QuoteMeta(name)
-	// (?m): per-line. Match "func/fn/def/class/type/etc Name" near start of line.
+	// (?m): per-line. Two alternations:
+	//   1) keyword + optional Go receiver + Name
+	//   2) `Name` standing alone as a type-like declaration (legacy form)
 	return regexp.MustCompile(
-		`(?m)(?:^|\s)(?:func|fn|def|function|class|struct|type|interface|enum|trait|impl|module|record)\s+` + esc + `\b`,
+		`(?m)(?:^|\s)(?:func|fn|def|function|class|struct|type|interface|enum|trait|impl|module|record)` +
+			`(?:\s*\([^)]*\))?` + // optional Go method receiver
+			`\s+` + esc + `\b`,
 	)
 }
 

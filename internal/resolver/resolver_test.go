@@ -35,7 +35,9 @@ func TestFindReferences_SkipsStdlibSymbol(t *testing.T) {
 	ws := t.TempDir()
 	mustWrite(t, filepath.Join(ws, "x.go"), "package x\nfunc Base() {}\n")
 	syms := []symbols.Symbol{
-		{Pkg: "path", Name: "Base", Kind: symbols.SymCall},
+		// File must be set so the language-scoped stdlib filter knows
+		// this is a Go symbol (and `path` is the Go stdlib package).
+		{Pkg: "path", Name: "Base", Kind: symbols.SymCall, File: "main.go"},
 	}
 	refs, _ := FindReferences(syms, ws, []string{"main.go"}, 5, 8192)
 	// path.Base is stdlib → should NOT be resolved (skip), even if a local

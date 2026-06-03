@@ -24,6 +24,11 @@ type Result struct {
 	InputTokens  int
 	OutputTokens int
 	TotalTokens  int
+
+	// ReferencedFiles is the v0.12 enrichment surface — the resolved files
+	// attached to the prompt as context. CLI uses this to populate the job
+	// record's referenced_file_paths field for observability.
+	ReferencedFiles []diff.ReferencedFile
 }
 
 type Options struct {
@@ -49,6 +54,10 @@ type Options struct {
 	// v0.12+: workspace root for pre-flight enrichment.
 	// When empty, enrichment is skipped (review proceeds with diff-only).
 	WorkspaceRoot string
+
+	// Verbose toggles stderr stats for pre-flight enrichment (scanner
+	// symbol count, resolver matches, attached files / dropped files).
+	Verbose bool
 }
 
 func Run(ctx context.Context, pluginRoot string, p provider.Provider, bundle diff.Bundle, opts Options) (Result, error) {
@@ -63,15 +72,25 @@ func Run(ctx context.Context, pluginRoot string, p provider.Provider, bundle dif
 	// main review proceeds.
 	if opts.WorkspaceRoot != "" && (len(bundle.Diff) > 0 || len(bundle.Untracked) > 0) {
 		syms := symbols.ExtractFromBundle(bundle)
+		if opts.Verbose {
+			fmt.Fprintf(os.Stderr, "[verbose] scanner: extracted %d symbols\n", len(syms))
+		}
 		if len(syms) > 0 {
 			diffPaths := diff.Paths(bundle)
-			refs, rerr := resolver.FindReferences(syms, opts.WorkspaceRoot, diffPaths, 5, 8*1024)
+			refs, rerr := resolver.FindReferences(syms, opts.WorkspaceRoot, diffPaths, 5, 4*1024)
 			if rerr != nil {
 				fmt.Fprintf(os.Stderr, "[warn] resolver: %v\n", rerr)
 			} else {
+				if opts.Verbose {
+					fmt.Fprintf(os.Stderr, "[verbose] resolver: %d references for %d symbols\n", len(refs), len(syms))
+				}
 				budget := computePromptBudget(bundle, opts.Glossary, schemaJSON)
+				before := len(bundle.Warnings)
 				bundle = diff.AttachReferenced(bundle, toReferenceInputs(refs), budget)
-				for _, w := range bundle.Warnings {
+				if opts.Verbose {
+					fmt.Fprintf(os.Stderr, "[verbose] bundle: %d referenced files attached (budget=%d bytes)\n", len(bundle.ReferencedFiles), budget)
+				}
+				for _, w := range bundle.Warnings[before:] {
 					if strings.HasPrefix(w, "referenced files dropped") {
 						fmt.Fprintf(os.Stderr, "[warn] %s\n", w)
 					}
@@ -160,10 +179,11 @@ func Run(ctx context.Context, pluginRoot string, p provider.Provider, bundle dif
 	}
 
 	return Result{
-		Review:       review,
-		InputTokens:  resp.InputTokens,
-		OutputTokens: resp.OutputTokens,
-		TotalTokens:  resp.TotalTokens,
+		Review:          review,
+		InputTokens:     resp.InputTokens,
+		OutputTokens:    resp.OutputTokens,
+		TotalTokens:     resp.TotalTokens,
+		ReferencedFiles: bundle.ReferencedFiles,
 	}, nil
 }
 
@@ -192,16 +212,12 @@ func toReferenceInputs(refs []resolver.Reference) []diff.ReferenceInput {
 }
 
 // computePromptBudget returns the remaining bytes available for referenced
-// files after accounting for diff, glossary, schema, and template overhead.
-// Negative results return 0 (no enrichment possible).
+// files. v0.12 caps enrichment at 32 KiB total to keep prompts well under
+// typical LLM context limits — referenced files are useful but should not
+// dominate the prompt or trigger model output truncation.
 func computePromptBudget(b diff.Bundle, glossary, schemaJSON string) int {
-	const totalCap = 256 * 1024
-	const overheadGuess = 1024
-	used := len(b.Diff) + len(glossary) + len(schemaJSON) + overheadGuess
-	if used >= totalCap {
-		return 0
-	}
-	return totalCap - used
+	const enrichmentCap = 32 * 1024
+	return enrichmentCap
 }
 
 // helperQuotaOK returns true unless we have cached evidence that the helper

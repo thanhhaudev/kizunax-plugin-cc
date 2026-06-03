@@ -1,6 +1,10 @@
 package resolver
 
-import "github.com/thanhhaudev/kizunax-plugin-cc/internal/symbols"
+import (
+	"path/filepath"
+
+	"github.com/thanhhaudev/kizunax-plugin-cc/internal/symbols"
+)
 
 // Hardcoded stdlib package skip lists per language. Symbols whose Pkg
 // matches a stdlib package are skipped — the LLM already knows them.
@@ -52,21 +56,28 @@ var tsStdlibPkgs = map[string]bool{
 }
 
 // IsStdlibSymbol returns true if sym refers to a known stdlib package
-// for one of our supported languages. The resolver skips such symbols
-// because the LLM already knows them — workspace search would yield no
-// definition file anyway.
+// for the source language of sym.File. Language-scoped to prevent
+// false collisions across ecosystems — e.g. a Go project package named
+// `util` would otherwise be filtered by the Node `util` module entry.
+// When sym.File has an unknown extension, returns false (fail-open so
+// resolver can search for a definition).
 func IsStdlibSymbol(sym symbols.Symbol) bool {
-	// For calls with a package prefix: check the package.
-	if sym.Pkg != "" {
-		if goStdlibPkgs[sym.Pkg] || pythonStdlibPkgs[sym.Pkg] || tsStdlibPkgs[sym.Pkg] {
-			return true
-		}
+	var pkgs map[string]bool
+	switch filepath.Ext(sym.File) {
+	case ".go":
+		pkgs = goStdlibPkgs
+	case ".py":
+		pkgs = pythonStdlibPkgs
+	case ".ts", ".tsx", ".js", ".jsx", ".mjs":
+		pkgs = tsStdlibPkgs
+	default:
+		return false
 	}
-	// For bare imports (Python/JS): check the name itself.
-	if sym.Kind == symbols.SymImport {
-		if goStdlibPkgs[sym.Name] || pythonStdlibPkgs[sym.Name] || tsStdlibPkgs[sym.Name] {
-			return true
-		}
+	if sym.Pkg != "" && pkgs[sym.Pkg] {
+		return true
+	}
+	if sym.Kind == symbols.SymImport && pkgs[sym.Name] {
+		return true
 	}
 	return false
 }

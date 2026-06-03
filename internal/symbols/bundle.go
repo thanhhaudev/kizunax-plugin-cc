@@ -50,13 +50,24 @@ func ExtractFromBundle(b diff.Bundle) []Symbol {
 		if len(added) == 0 {
 			continue
 		}
-		// Go files need a valid package clause for the AST parser.
-		// If the added-lines snippet is missing one, prepend a stub.
+		// Go files need a valid syntactic envelope for the AST parser.
+		// Added lines from a diff are usually function-body fragments
+		// (statements, calls) that won't parse standalone. Wrap them in a
+		// fake function body when no package clause is present so the AST
+		// extractor can walk the call/type/identifier expressions.
 		src := added
 		if strings.HasSuffix(path, ".go") && !strings.Contains(added, "package ") {
-			src = "package main\n" + added
+			src = "package main\nfunc _kizunaxDiffFragment() {\n" + added + "\n}\n"
 		}
-		add(e.Extract(path, []byte(src)))
+		syms := e.Extract(path, []byte(src))
+		// If Go AST returned nothing (snippet still didn't parse — e.g. a
+		// diff that adds an import block with no function context), fall
+		// back to RegexExtractor so we still surface call sites for the
+		// resolver to look up.
+		if len(syms) == 0 && strings.HasSuffix(path, ".go") {
+			syms = (&RegexExtractor{}).Extract(path, []byte(added))
+		}
+		add(syms)
 	}
 
 	// 2. Untracked files: extractor gets the full content.

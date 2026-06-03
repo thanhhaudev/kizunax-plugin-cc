@@ -142,6 +142,7 @@ func runReviewWithMode(args []string, mode prompt.Mode) error {
 		HelperAPIKey:  cfg.HelperAPIKey,
 		WorkspaceDir:  wsDir,
 		WorkspaceRoot: cwd,
+		Verbose:       verbose,
 	})
 	end := time.Now()
 	dur := end.Sub(start)
@@ -179,7 +180,7 @@ func runReviewWithMode(args []string, mode prompt.Mode) error {
 			HelperKeyHash: helperKeyHash(cfg.HelperAPIKey),
 			HelperKeyMask: helperKeyMask(cfg.HelperAPIKey),
 			// v0.12: paths only (privacy).
-			ReferencedFilePaths: referencedFilePathsFrom(bundle),
+			ReferencedFilePaths: referencedFilePathsFromResult(result),
 		},
 		LogPath:  "",
 		Warnings: bundle.Warnings,
@@ -287,10 +288,10 @@ func parseTarget(args []string) (git.Target, error) {
 	return t, nil
 }
 
-func referencedFilePathsFrom(b diff.Bundle) []string {
-	out := make([]string, len(b.ReferencedFiles))
-	for i, r := range b.ReferencedFiles {
-		out[i] = r.Path
+func referencedFilePathsFromResult(r runner.Result) []string {
+	out := make([]string, len(r.ReferencedFiles))
+	for i, f := range r.ReferencedFiles {
+		out[i] = f.Path
 	}
 	return out
 }
