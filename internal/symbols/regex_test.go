@@ -153,6 +153,67 @@ class AuthService {
 	}
 }
 
+func TestRegexExtractor_TS(t *testing.T) {
+	src := []byte(`
+import { Foo, Bar as Baz } from './lib';
+import type { Qux } from './types';
+import Default from './d';
+import * as ns from './ns';
+
+export function classic(x: number) { return x; }
+export const arrow = (n: number) => n + 1;
+const inferred = async () => 42;
+
+export class Service {
+    handle(): void {}
+}
+
+interface Iface {}
+type Alias = string;
+enum Mode { A, B }
+
+obj.method();
+maybe?.method();
+`)
+	got := (&RegexExtractor{lang: "ts"}).Extract("svc.ts", src)
+
+	want := map[string]bool{
+		"def:classic":       false,
+		"def:arrow":         false,
+		"def:inferred":      false,
+		"def:Service":       false,
+		"def:Iface":         false,
+		"def:Alias":         false,
+		"def:Mode":          false,
+		"import:Foo":        false,
+		"import:Baz":        false, // aliased from Bar
+		"import:Qux":        false,
+		"import:Default":    false,
+		"import:ns":         false,
+		"call:obj.method":   false,
+		"call:maybe.method": false,
+	}
+	for _, s := range got {
+		var key string
+		switch s.Kind {
+		case SymDef:
+			key = "def:" + s.Name
+		case SymImport:
+			key = "import:" + s.Name
+		case SymCall:
+			key = "call:" + s.Pkg + "." + s.Name
+		}
+		if _, ok := want[key]; ok {
+			want[key] = true
+		}
+	}
+	for k, ok := range want {
+		if !ok {
+			t.Errorf("missing expected symbol: %s — got %+v", k, got)
+		}
+	}
+}
+
 func TestRegexExtractor_DefaultLang_PreservesV012Behavior(t *testing.T) {
 	src := []byte("func Foo() {}\nimport \"bar/baz\"\npkg.Method()\n")
 	got := (&RegexExtractor{lang: "default"}).Extract("x.unknown", src)

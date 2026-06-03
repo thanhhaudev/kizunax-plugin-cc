@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"regexp"
+	"strings"
 )
 
 // RegexExtractor is the universal fallback extractor.
@@ -74,6 +75,57 @@ var langPatterns = map[string]patternSet{
 			regexp.MustCompile(`->([A-Za-z_]\w*)->([A-Za-z_]\w*)\s*\(`),
 		},
 	},
+	"ts": {
+		defs: []*regexp.Regexp{
+			// classic function (with optional export/async)
+			regexp.MustCompile(`(?:export\s+)?(?:async\s+)?function\s+([A-Za-z_]\w*)`),
+			// const/let/var X = (…) => / X = async (…) => / single-arg arrow without parens
+			regexp.MustCompile(`(?:export\s+)?(?:const|let|var)\s+([A-Za-z_]\w*)\s*(?::[^=]+)?=\s*(?:async\s+)?(?:\([^)]*\)|[A-Za-z_]\w*)\s*(?::[^=]+)?=>`),
+			// class / abstract class
+			regexp.MustCompile(`(?:export\s+)?(?:abstract\s+)?class\s+([A-Za-z_]\w*)`),
+			// interface / enum / type alias
+			regexp.MustCompile(`(?:export\s+)?(?:interface|enum|type)\s+([A-Za-z_]\w*)`),
+		},
+		imports: []*regexp.Regexp{
+			// Named import: capture the whole brace body for splitting.
+			// import { X, Y as Z } from '…';  or  import type { … } from …
+			regexp.MustCompile(`import\s+(?:type\s+)?\{\s*([^}]+)\s*\}\s+from\s+["'][^"']+["']`),
+			// Default import: import X from '…'
+			regexp.MustCompile(`import\s+(?:type\s+)?([A-Za-z_]\w*)\s+from\s+["'][^"']+["']`),
+			// Namespace import: import * as ns from '…'
+			regexp.MustCompile(`import\s+\*\s+as\s+([A-Za-z_]\w*)\s+from\s+["'][^"']+["']`),
+		},
+		calls: []*regexp.Regexp{
+			// obj.method( or obj?.method(
+			regexp.MustCompile(`\b([A-Za-z_]\w*)\??\.([A-Za-z_]\w*)\s*\(`),
+		},
+	},
+}
+
+// splitNamedImports parses the body of a TS/JS named-import brace.
+// Input: `Foo, Bar as Baz, Qux`. Output: ["Foo", "Baz", "Qux"].
+// Whitespace and trailing commas are tolerated. The "type" modifier
+// (e.g. `type X` in `import { type X, Y } from …`) is stripped.
+func splitNamedImports(body string) []string {
+	var out []string
+	for _, raw := range strings.Split(body, ",") {
+		part := strings.TrimSpace(raw)
+		if part == "" {
+			continue
+		}
+		// "X as Y" → take Y; "type X as Y" → take Y; "X" → take X.
+		fields := strings.Fields(part)
+		if len(fields) == 0 {
+			continue
+		}
+		name := fields[len(fields)-1]
+		// Strip TS-only modifier prefix if it landed alone (e.g. "type").
+		if name == "type" {
+			continue
+		}
+		out = append(out, name)
+	}
+	return out
 }
 
 func (e *RegexExtractor) Extract(path string, content []byte) []Symbol {
@@ -105,14 +157,26 @@ func (e *RegexExtractor) Extract(path string, content []byte) []Symbol {
 				break
 			}
 		}
-		for _, re := range ps.imports {
+		for ri, re := range ps.imports {
 			m := re.FindSubmatch(line)
 			if m == nil {
 				continue
 			}
-			// Pick the last non-empty capture group so patterns with an
-			// optional alias group (e.g. PHP "use X as Y") emit "Y"
-			// while single-group patterns still emit group 1.
+			// Lang "ts" special case: the first imports pattern's group 1
+			// is a brace body like "Foo, Bar as Baz" — split it and emit
+			// one symbol per name (using alias when present).
+			if key == "ts" && ri == 0 {
+				for _, name := range splitNamedImports(string(m[1])) {
+					syms = append(syms, Symbol{
+						Name: name,
+						Kind: SymImport,
+						File: path,
+						Line: lineNo,
+					})
+				}
+				break
+			}
+			// General path: last non-empty capture group.
 			name := ""
 			for i := len(m) - 1; i >= 1; i-- {
 				if len(m[i]) > 0 {
