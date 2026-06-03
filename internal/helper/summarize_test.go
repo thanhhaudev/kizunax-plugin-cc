@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	"github.com/thanhhaudev/kizunax-plugin-cc/internal/config"
 	"github.com/thanhhaudev/kizunax-plugin-cc/internal/schema"
@@ -95,6 +96,33 @@ func TestSummarize_FindingsCappedAt2KiB(t *testing.T) {
 	}
 	if got := len(gotBody.Messages[1].Content); got > maxSummarizeInputBytes+200 {
 		t.Fatalf("user message %d bytes exceeds cap %d (+slack)", got, maxSummarizeInputBytes)
+	}
+}
+
+func TestSummarize_TruncationKeepsValidUTF8(t *testing.T) {
+	var gotBody Request
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewDecoder(r.Body).Decode(&gotBody)
+		_, _ = w.Write([]byte(`{"choices":[{"message":{"content":"ok"}}]}`))
+	}))
+	defer srv.Close()
+
+	// 3-byte rune "ế" repeated past both the per-finding 240-byte cap and
+	// the 2KiB total cap. Without rune-safe truncation, byte-slicing would
+	// produce invalid UTF-8 mid-rune.
+	bigVN := strings.Repeat("ế", 1000)
+	cfg := config.HelperConfig{BaseURL: srv.URL, Model: "m", TimeoutSeconds: 5}
+	result := schema.ReviewResult{
+		Verdict: "needs-attention",
+		Findings: []schema.Finding{
+			{Severity: "critical", Title: "Title", File: "a.go", LineStart: 1, LineEnd: 1, Body: bigVN},
+		},
+	}
+	if _, err := Summarize(context.Background(), cfg, "kx", result); err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if !utf8.ValidString(gotBody.Messages[1].Content) {
+		t.Fatalf("serialized findings contain invalid UTF-8")
 	}
 }
 

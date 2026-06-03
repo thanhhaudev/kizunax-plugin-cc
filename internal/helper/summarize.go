@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/thanhhaudev/kizunax-plugin-cc/internal/config"
 	"github.com/thanhhaudev/kizunax-plugin-cc/internal/schema"
@@ -51,7 +52,7 @@ func serializeFindings(r schema.ReviewResult) string {
 		body := strings.TrimSpace(f.Body)
 		if body != "" {
 			if len(body) > 240 {
-				body = body[:240] + "…"
+				body = truncateUTF8(body, 240) + "…"
 			}
 			fmt.Fprintf(&sb, "   %s\n", body)
 		}
@@ -61,7 +62,21 @@ func serializeFindings(r schema.ReviewResult) string {
 	}
 	out := sb.String()
 	if len(out) > maxSummarizeInputBytes {
-		out = out[:maxSummarizeInputBytes]
+		out = truncateUTF8(out, maxSummarizeInputBytes)
 	}
 	return out
+}
+
+// truncateUTF8 returns s shortened to at most maxBytes, snapped back to the
+// nearest rune boundary so the result is always valid UTF-8.
+func truncateUTF8(s string, maxBytes int) string {
+	if len(s) <= maxBytes {
+		return s
+	}
+	for i := maxBytes; i > 0; i-- {
+		if utf8.RuneStart(s[i]) {
+			return s[:i]
+		}
+	}
+	return ""
 }
