@@ -71,6 +71,7 @@ func Run(ctx context.Context, pluginRoot string, p provider.Provider, bundle dif
 	// Enrichment is strictly additive: any failure → empty referenced files,
 	// main review proceeds.
 	if opts.WorkspaceRoot != "" && (len(bundle.Diff) > 0 || len(bundle.Untracked) > 0) {
+		symbols.SetWorkspaceRoot(opts.WorkspaceRoot)
 		syms := symbols.ExtractFromBundle(bundle)
 		if opts.Verbose {
 			fmt.Fprintf(os.Stderr, "[verbose] scanner: extracted %d symbols\n", len(syms))
