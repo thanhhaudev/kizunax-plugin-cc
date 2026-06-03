@@ -186,25 +186,42 @@ func instantiateHostModule(ctx context.Context, rt wazero.Runtime, rfns *runtime
 		WithFunc(func(ctx context.Context, payload, isError int32) int32 { return 0 }).
 		Export("tree_sitter_progress_callback").
 		NewFunctionBuilder().
-		WithFunc(func(ctx context.Context, mod api.Module, inputBuf, byteIndex, row, column, lenAddr int32) {
-			// Serve the bytes at byteIndex from the current parse source into
-			// inputBuf, writing the byte-count at lenAddr. This is the mechanism
-			// by which the wasm parser reads source text incrementally.
+		WithFunc(func(ctx context.Context, mod api.Module, inputBuf, charIndex, row, column, lenAddr int32) {
+			// Serve source text to the wasm parser as UTF-16 LE.
+			//
+			// The wasm runtime calls this via a shim (func[263]) that converts
+			// byte offsets to UTF-16 indices before calling us, so charIndex
+			// is a UTF-16 character index (== byte index for ASCII/Latin-1
+			// sources, which are the common case). The buffer must contain
+			// UTF-16 LE encoded text and lenAddr must receive the UTF-16
+			// character count (not the byte count).
 			parseSrcMu.Lock()
 			src := parseSrcBuf
 			parseSrcMu.Unlock()
-			if byteIndex < 0 || int(byteIndex) >= len(src) {
+			if charIndex < 0 || int(charIndex) >= len(src) {
 				// Signal EOF or out-of-range.
 				mod.Memory().WriteUint32Le(uint32(lenAddr), 0)
 				return
 			}
-			chunk := src[byteIndex:]
-			const maxChunk = 10 * 1024
-			if len(chunk) > maxChunk {
-				chunk = chunk[:maxChunk]
+			// Convert to runes starting at charIndex, encode as UTF-16 LE.
+			// For ASCII/Latin-1 (the common case) this is a no-op expansion:
+			// each byte becomes a 2-byte little-endian code unit.
+			//
+			// The input buffer is 10240 bytes (allocated by ts_parser_new_wasm),
+			// so we can fit at most 10240/2 = 5120 UTF-16 code units per chunk.
+			const maxUTF16Units = 5 * 1024
+			runes := []rune(string(src[charIndex:]))
+			if len(runes) > maxUTF16Units {
+				runes = runes[:maxUTF16Units]
 			}
-			mod.Memory().Write(uint32(inputBuf), chunk)
-			mod.Memory().WriteUint32Le(uint32(lenAddr), uint32(len(chunk)))
+			utf16Bytes := make([]byte, len(runes)*2)
+			for i, r := range runes {
+				// BMP characters only (> 0xFFFF not expected in source code).
+				utf16Bytes[i*2] = byte(r)
+				utf16Bytes[i*2+1] = byte(r >> 8)
+			}
+			mod.Memory().Write(uint32(inputBuf), utf16Bytes)
+			mod.Memory().WriteUint32Le(uint32(lenAddr), uint32(len(runes)))
 		}).
 		Export("tree_sitter_parse_callback").
 		NewFunctionBuilder().
