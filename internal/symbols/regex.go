@@ -14,6 +14,16 @@ import (
 // zero references during the workspace grep).
 type RegexExtractor struct{}
 
+// patternSet holds the regex patterns used by RegexExtractor for one
+// language. Each slice may contain multiple alternates that are tried
+// in order; the first match per line wins for defs/imports, and all
+// matches across all alternates accumulate for calls.
+type patternSet struct {
+	defs    []*regexp.Regexp // capture group 1 = symbol name
+	imports []*regexp.Regexp // capture group 1 = imported symbol or module
+	calls   []*regexp.Regexp // capture group 1 = pkg/receiver, group 2 = method
+}
+
 var (
 	defRe = regexp.MustCompile(
 		`(?:export\s+|public\s+|private\s+|protected\s+|async\s+|abstract\s+)*` +
@@ -27,6 +37,22 @@ var (
 		`\b([A-Za-z_]\w*)\.([A-Za-z_]\w*)\s*\(`,
 	)
 )
+
+// langPatterns maps a language key (returned by extToLang) to its
+// patternSet. The "default" key is the universal fallback used when
+// the language is unknown — its contents preserve v0.12.0 behavior.
+//
+// Add a new language by:
+//  1. Add a new map entry here.
+//  2. Add the extension → language mapping in extToLang (factory.go).
+//  3. Add table-driven test cases in regex_test.go.
+var langPatterns = map[string]patternSet{
+	"default": {
+		defs:    []*regexp.Regexp{defRe},
+		imports: []*regexp.Regexp{importRe},
+		calls:   []*regexp.Regexp{callRe},
+	},
+}
 
 func (e *RegexExtractor) Extract(path string, content []byte) []Symbol {
 	var syms []Symbol

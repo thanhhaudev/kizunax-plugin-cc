@@ -91,3 +91,13 @@ func TestRegex_PositionInfoRecorded(t *testing.T) {
 	}
 	t.Fatalf("hello def not found")
 }
+
+func TestLangPatterns_HasDefaultEntry(t *testing.T) {
+	ps, ok := langPatterns["default"]
+	if !ok {
+		t.Fatal("langPatterns[\"default\"] must exist as the fallback")
+	}
+	if len(ps.defs) == 0 || len(ps.imports) == 0 || len(ps.calls) == 0 {
+		t.Fatalf("default patternSet must have defs/imports/calls populated: %+v", ps)
+	}
+}
