@@ -30,6 +30,8 @@ Return ONLY a JSON object matching this schema. No prose, no fences:
 
 Each finding must reference a specific file and line range from the diff.
 
+The `file` field MUST be the EXACT repo-relative path as shown in the diff header (the path after `+++ b/`, e.g., `internal/auth/auth.go`), NOT the basename. Two files can share a basename — using only `auth.go` makes the finding ambiguous and unactionable. Copy the path verbatim from `+++ b/<path>`.
+
 Diff to review:
 
 {{REVIEW_INPUT}}
