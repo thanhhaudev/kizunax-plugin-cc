@@ -77,7 +77,7 @@ func (e *wasmExtractor) Extract(path string, content []byte) []Symbol {
 	if err != nil || len(data) == 0 {
 		// Grammar not present (not yet compiled or excluded).
 		// Fall back to regex — same precision as -tags lite for this file.
-		return (&RegexExtractor{}).Extract(path, content)
+		return (&RegexExtractor{lang: extToLang(filepath.Ext(path))}).Extract(path, content)
 	}
 
 	// TODO(v0.12.1): wire wazero runtime + tree-sitter parse here.
@@ -91,5 +91,5 @@ func (e *wasmExtractor) Extract(path string, content []byte) []Symbol {
 	//   2. Call exported tree-sitter parse function with content bytes.
 	//   3. Walk returned tree, mapping nodes to Symbol structs.
 	// See: https://github.com/tree-sitter/tree-sitter/blob/master/lib/binding_web/binding.ts
-	return (&RegexExtractor{}).Extract(path, content)
+	return (&RegexExtractor{lang: extToLang(filepath.Ext(path))}).Extract(path, content)
 }

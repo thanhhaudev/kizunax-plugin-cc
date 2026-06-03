@@ -41,5 +41,21 @@ func ForFile(path string) Extractor {
 	if useWASM(ext) {
 		return newWASMExtractor(ext)
 	}
-	return &RegexExtractor{}
+	return &RegexExtractor{lang: extToLang(ext)}
+}
+
+// extToLang maps a file extension to the language key used by
+// RegexExtractor + langPatterns. Unknown extensions fall back to
+// "default" so the v0.12.0 universal patterns continue to apply.
+func extToLang(ext string) string {
+	switch ext {
+	case ".php":
+		return "php"
+	case ".ts", ".tsx", ".js", ".jsx", ".mjs":
+		return "ts"
+	case ".py":
+		return "python"
+	default:
+		return "default"
+	}
 }
