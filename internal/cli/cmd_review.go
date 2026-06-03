@@ -130,17 +130,18 @@ func runReviewWithMode(args []string, mode prompt.Mode) error {
 	ctx := context.Background()
 	start := time.Now()
 	result, runErr := runner.Run(ctx, pluginRoot, p, bundle, runner.Options{
-		Mode:         mode,
-		Focus:        focus,
-		Glossary:     gloss.Content,
-		Model:        cfg.Model,
-		Temperature:  cfg.Temperature,
-		MaxTokens:    cfg.MaxTokens,
-		Summary:      summary,
-		NoSummary:    noSummary,
-		HelperCfg:    cfg.Helper,
-		HelperAPIKey: cfg.HelperAPIKey,
-		WorkspaceDir: wsDir,
+		Mode:          mode,
+		Focus:         focus,
+		Glossary:      gloss.Content,
+		Model:         cfg.Model,
+		Temperature:   cfg.Temperature,
+		MaxTokens:     cfg.MaxTokens,
+		Summary:       summary,
+		NoSummary:     noSummary,
+		HelperCfg:     cfg.Helper,
+		HelperAPIKey:  cfg.HelperAPIKey,
+		WorkspaceDir:  wsDir,
+		WorkspaceRoot: cwd,
 	})
 	end := time.Now()
 	dur := end.Sub(start)
