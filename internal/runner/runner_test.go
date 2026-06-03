@@ -271,8 +271,14 @@ func TestRun_HelperSkipped_WhenNoSummary(t *testing.T) {
 	defer srv.Close()
 
 	pluginRoot := setupPluginRoot(t)
+	// 3 findings so the count-based default would normally fire the helper;
+	// only NoSummary should stop it.
 	p := &mockProvider{responses: []provider.ChatResponse{
-		{Content: `{"verdict":"approve","summary":"","findings":[],"next_steps":[]}`},
+		{Content: `{"verdict":"needs-attention","summary":"s","findings":[
+			{"severity":"critical","title":"x","body":"b","file":"f","line_start":1,"line_end":1,"confidence":0.5,"recommendation":"r"},
+			{"severity":"high","title":"y","body":"b","file":"f","line_start":2,"line_end":2,"confidence":0.5,"recommendation":"r"},
+			{"severity":"medium","title":"z","body":"b","file":"f","line_start":3,"line_end":3,"confidence":0.5,"recommendation":"r"}
+		],"next_steps":[]}`},
 	}}
 
 	opts := Options{
