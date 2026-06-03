@@ -214,6 +214,58 @@ maybe?.method();
 	}
 }
 
+func TestRegexExtractor_Python(t *testing.T) {
+	src := []byte(`
+from app.db import Connection
+import app.logger as log
+import os
+
+@app.route("/login")
+def login(username):
+    row = db.fetch_row(username)
+    return row
+
+async def refresh():
+    pass
+
+class AuthService:
+    def authenticate(self, user):
+        return self.validate(user)
+`)
+	got := (&RegexExtractor{lang: "python"}).Extract("auth.py", src)
+
+	want := map[string]bool{
+		"def:login":          false,
+		"def:refresh":        false,
+		"def:authenticate":   false,
+		"def:AuthService":    false,
+		"import:Connection":  false,
+		"import:log":         false, // alias of app.logger
+		"import:os":          false,
+		"call:db.fetch_row":  false,
+		"call:self.validate": false,
+	}
+	for _, s := range got {
+		var key string
+		switch s.Kind {
+		case SymDef:
+			key = "def:" + s.Name
+		case SymImport:
+			key = "import:" + s.Name
+		case SymCall:
+			key = "call:" + s.Pkg + "." + s.Name
+		}
+		if _, ok := want[key]; ok {
+			want[key] = true
+		}
+	}
+	for k, ok := range want {
+		if !ok {
+			t.Errorf("missing expected symbol: %s — got %+v", k, got)
+		}
+	}
+}
+
 func TestRegexExtractor_DefaultLang_PreservesV012Behavior(t *testing.T) {
 	src := []byte("func Foo() {}\nimport \"bar/baz\"\npkg.Method()\n")
 	got := (&RegexExtractor{lang: "default"}).Extract("x.unknown", src)

@@ -75,6 +75,26 @@ var langPatterns = map[string]patternSet{
 			regexp.MustCompile(`->([A-Za-z_]\w*)->([A-Za-z_]\w*)\s*\(`),
 		},
 	},
+	"python": {
+		defs: []*regexp.Regexp{
+			// def name(...) or async def name(...)
+			regexp.MustCompile(`(?:async\s+)?def\s+([A-Za-z_]\w*)`),
+			// class name
+			regexp.MustCompile(`class\s+([A-Za-z_]\w*)`),
+		},
+		imports: []*regexp.Regexp{
+			// from app.db import Connection           → "Connection"
+			// from app.db import Connection as C      → "C" (alias via last-non-empty-capture)
+			regexp.MustCompile(`^\s*from\s+[\w.]+\s+import\s+([A-Za-z_]\w*)(?:\s+as\s+([A-Za-z_]\w*))?`),
+			// import app.logger as log                → "log"
+			// import os                               → "os"
+			regexp.MustCompile(`^\s*import\s+(?:[\w.]+\s+as\s+([A-Za-z_]\w*)|([A-Za-z_]\w*))`),
+		},
+		calls: []*regexp.Regexp{
+			// obj.method(
+			regexp.MustCompile(`\b([A-Za-z_]\w*)\.([A-Za-z_]\w*)\s*\(`),
+		},
+	},
 	"ts": {
 		defs: []*regexp.Regexp{
 			// classic function (with optional export/async)
