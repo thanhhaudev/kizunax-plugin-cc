@@ -10,6 +10,7 @@ import (
 	"github.com/thanhhaudev/kizunax-plugin-cc/internal/diff"
 	xerrors "github.com/thanhhaudev/kizunax-plugin-cc/internal/errors"
 	"github.com/thanhhaudev/kizunax-plugin-cc/internal/git"
+	"github.com/thanhhaudev/kizunax-plugin-cc/internal/glossary"
 	"github.com/thanhhaudev/kizunax-plugin-cc/internal/job"
 	"github.com/thanhhaudev/kizunax-plugin-cc/internal/prompt"
 	"github.com/thanhhaudev/kizunax-plugin-cc/internal/render"
@@ -45,6 +46,12 @@ func runReviewWithMode(args []string, mode prompt.Mode) error {
 	}
 	focus := flagValue(args, "--focus")
 	providerOverride := flagValue(args, "--provider")
+	summary := hasFlag(args, "--summary")
+	noSummary := hasFlag(args, "--no-summary")
+	if summary && noSummary {
+		return xerrors.User("conflict_summary_flags",
+			"--summary and --no-summary are mutually exclusive", "")
+	}
 
 	target, err := parseTarget(args)
 	if err != nil {
@@ -63,6 +70,26 @@ func runReviewWithMode(args []string, mode prompt.Mode) error {
 	cfg, err := config.Load(providerOverride)
 	if err != nil {
 		return err
+	}
+
+	gloss, glossErr := glossary.Load(cwd)
+	if glossErr != nil {
+		fmt.Fprintf(os.Stderr, "[warn] glossary: %v\n", glossErr)
+	}
+	if verbose {
+		if gloss.Path == "" {
+			fmt.Fprintln(os.Stderr, "[verbose] glossary: no glossary file found in workspace")
+		} else {
+			suffix := ""
+			if gloss.Truncated {
+				suffix = " (truncated)"
+			}
+			fmt.Fprintf(os.Stderr, "[verbose] glossary: loaded %d chars from %s%s\n",
+				len(gloss.Content), gloss.Path, suffix)
+		}
+	}
+	if gloss.Truncated {
+		fmt.Fprintf(os.Stderr, "[warn] glossary truncated to %d bytes: %s\n", len(gloss.Content), gloss.Path)
 	}
 
 	if verbose {
@@ -95,14 +122,25 @@ func runReviewWithMode(args []string, mode prompt.Mode) error {
 		return err
 	}
 
+	var wsDir state.WorkspaceDir
+	if ws, wsErr := state.Resolve(cwd); wsErr == nil {
+		wsDir = ws
+	}
+
 	ctx := context.Background()
 	start := time.Now()
 	result, runErr := runner.Run(ctx, pluginRoot, p, bundle, runner.Options{
-		Mode:        mode,
-		Focus:       focus,
-		Model:       cfg.Model,
-		Temperature: cfg.Temperature,
-		MaxTokens:   cfg.MaxTokens,
+		Mode:         mode,
+		Focus:        focus,
+		Glossary:     gloss.Content,
+		Model:        cfg.Model,
+		Temperature:  cfg.Temperature,
+		MaxTokens:    cfg.MaxTokens,
+		Summary:      summary,
+		NoSummary:    noSummary,
+		HelperCfg:    cfg.Helper,
+		HelperAPIKey: cfg.HelperAPIKey,
+		WorkspaceDir: wsDir,
 	})
 	end := time.Now()
 	dur := end.Sub(start)
@@ -128,11 +166,16 @@ func runReviewWithMode(args []string, mode prompt.Mode) error {
 		CompletedAt: &end,
 		DurationMs:  dur.Milliseconds(),
 		Request: job.Request{
-			Mode:     mode.String(),
-			Target:   target,
-			Focus:    focus,
-			Provider: cfg.Provider,
-			Model:    cfg.Model,
+			Mode:          mode.String(),
+			Target:        target,
+			Focus:         focus,
+			Provider:      cfg.Provider,
+			Model:         cfg.Model,
+			Summary:       summary,
+			NoSummary:     noSummary,
+			HelperBaseURL: cfg.Helper.BaseURL,
+			HelperModel:   cfg.Helper.Model,
+			HelperAPIKey:  cfg.HelperAPIKey,
 		},
 		LogPath:  "",
 		Warnings: bundle.Warnings,

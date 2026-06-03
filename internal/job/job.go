@@ -45,6 +45,14 @@ type Request struct {
 	// KeyMask is the display-safe mask of the same key (e.g. "kx_AbCd…").
 	// Persisted because the raw key is never stored.
 	KeyMask string `json:"key_mask,omitempty"`
+
+	// v0.11+ helper TL;DR fields. Persisted at spawn so background workers
+	// stay consistent across config changes / key rotation.
+	Summary       bool   `json:"summary,omitempty"`
+	NoSummary     bool   `json:"no_summary,omitempty"`
+	HelperBaseURL string `json:"helper_base_url,omitempty"`
+	HelperModel   string `json:"helper_model,omitempty"`
+	HelperAPIKey  string `json:"helper_api_key,omitempty"`
 }
 
 type TokenUsage struct {
