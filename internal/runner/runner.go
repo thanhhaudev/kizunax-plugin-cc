@@ -78,7 +78,8 @@ func Run(ctx context.Context, pluginRoot string, p provider.Provider, bundle dif
 		}
 		if len(syms) > 0 {
 			diffPaths := diff.Paths(bundle)
-			refs, rerr := resolver.FindReferences(syms, opts.WorkspaceRoot, diffPaths, 5, 4*1024)
+			stats, rerr := resolver.FindReferences(syms, opts.WorkspaceRoot, diffPaths, 5, 4*1024)
+			refs := stats.Refs
 			if rerr != nil {
 				fmt.Fprintf(os.Stderr, "[warn] resolver: %v\n", rerr)
 			} else {
