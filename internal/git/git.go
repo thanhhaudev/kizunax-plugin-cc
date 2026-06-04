@@ -5,7 +5,7 @@ import (
 	"os/exec"
 	"strings"
 
-	xerrors "github.com/thanhhaudev/kizunax-plugin-cc/internal/errors"
+	xerrors "github.com/thanhhaudev/kizunax-plugin-cc/pkg/errors"
 )
 
 func EnsureRepo(cwd string) error {

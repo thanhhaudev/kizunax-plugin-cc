@@ -6,7 +6,7 @@ import (
 	"os"
 
 	"github.com/thanhhaudev/kizunax-plugin-cc/internal/diff"
-	xerrors "github.com/thanhhaudev/kizunax-plugin-cc/internal/errors"
+	xerrors "github.com/thanhhaudev/kizunax-plugin-cc/pkg/errors"
 	"github.com/thanhhaudev/kizunax-plugin-cc/internal/job"
 	"github.com/thanhhaudev/kizunax-plugin-cc/internal/prompt"
 	"github.com/thanhhaudev/kizunax-plugin-cc/internal/render"

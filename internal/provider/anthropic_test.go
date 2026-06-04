@@ -10,7 +10,7 @@ import (
 	"testing"
 
 	"github.com/thanhhaudev/kizunax-plugin-cc/internal/config"
-	xerrors "github.com/thanhhaudev/kizunax-plugin-cc/internal/errors"
+	xerrors "github.com/thanhhaudev/kizunax-plugin-cc/pkg/errors"
 )
 
 func TestAnthropic_HeadersAndPath(t *testing.T) {

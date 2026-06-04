@@ -7,7 +7,7 @@ import (
 	"strings"
 
 	"github.com/thanhhaudev/kizunax-plugin-cc/internal/diff"
-	xerrors "github.com/thanhhaudev/kizunax-plugin-cc/internal/errors"
+	xerrors "github.com/thanhhaudev/kizunax-plugin-cc/pkg/errors"
 )
 
 type Mode int

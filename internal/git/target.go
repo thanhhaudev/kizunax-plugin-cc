@@ -3,7 +3,7 @@ package git
 import (
 	"fmt"
 
-	xerrors "github.com/thanhhaudev/kizunax-plugin-cc/internal/errors"
+	xerrors "github.com/thanhhaudev/kizunax-plugin-cc/pkg/errors"
 )
 
 type TargetKind int

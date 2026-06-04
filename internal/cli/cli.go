@@ -3,7 +3,7 @@ package cli
 import (
 	"fmt"
 
-	xerrors "github.com/thanhhaudev/kizunax-plugin-cc/internal/errors"
+	xerrors "github.com/thanhhaudev/kizunax-plugin-cc/pkg/errors"
 )
 
 const Version = "0.13.0"

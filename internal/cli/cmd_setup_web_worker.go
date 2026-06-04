@@ -4,7 +4,7 @@ import (
 	"net"
 	"os"
 
-	xerrors "github.com/thanhhaudev/kizunax-plugin-cc/internal/errors"
+	xerrors "github.com/thanhhaudev/kizunax-plugin-cc/pkg/errors"
 )
 
 // runInternalSetupWebWorker is the detached child entry point spawned by

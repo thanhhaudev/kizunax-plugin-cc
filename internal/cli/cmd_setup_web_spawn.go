@@ -8,7 +8,7 @@ import (
 	"os/exec"
 	"syscall"
 
-	xerrors "github.com/thanhhaudev/kizunax-plugin-cc/internal/errors"
+	xerrors "github.com/thanhhaudev/kizunax-plugin-cc/pkg/errors"
 )
 
 // spawnSetupWebWorker forks-execs the current binary as
