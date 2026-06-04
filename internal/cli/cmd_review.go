@@ -52,6 +52,11 @@ func runReviewWithMode(args []string, mode prompt.Mode) error {
 	summary := hasFlag(args, "--summary")
 	noSummary := hasFlag(args, "--no-summary")
 	rescan := hasFlag(args, "--rescan")
+	expandCallers := hasFlag(args, "--expand-callers")
+	expandTypeDefs := hasFlag(args, "--expand-typedefs")
+	expandTests := hasFlag(args, "--expand-tests")
+	expandAll := hasFlag(args, "--expand-all")
+	noExpand := hasFlag(args, "--no-expand")
 	if summary && noSummary {
 		return xerrors.User("conflict_summary_flags",
 			"--summary and --no-summary are mutually exclusive", "")
@@ -165,6 +170,11 @@ func runReviewWithMode(args []string, mode prompt.Mode) error {
 		WorkspaceRoot: cwd,
 		Verbose:       verbose,
 		ForceRescan:   rescan,
+		ExpandCallers: expandCallers,
+		ExpandTypeDefs: expandTypeDefs,
+		ExpandTests:   expandTests,
+		ExpandAll:     expandAll,
+		NoExpand:      noExpand,
 		BundleLogSink: bundleSink,
 	})
 	end := time.Now()
