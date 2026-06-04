@@ -16,7 +16,7 @@ func mkdirAll(p string) error {
 // package's tests.
 func tempWorkspace(t *testing.T) state.WorkspaceDir {
 	t.Helper()
-	ws := state.WorkspaceDir{Root: t.TempDir()}
+	ws := state.NewWorkspaceDir(t.TempDir())
 	if err := mkdirAll(ws.JobsDir()); err != nil {
 		t.Fatalf("setup jobs dir: %v", err)
 	}

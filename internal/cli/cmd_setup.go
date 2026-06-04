@@ -10,8 +10,8 @@ import (
 	"strings"
 
 	"github.com/thanhhaudev/kizunax-plugin-cc/internal/config"
-	xerrors "github.com/thanhhaudev/kizunax-plugin-cc/internal/errors"
-	"github.com/thanhhaudev/kizunax-plugin-cc/internal/provider"
+	xerrors "github.com/thanhhaudev/kizunax-plugin-cc/pkg/errors"
+	"github.com/thanhhaudev/kizunax-plugin-cc/pkg/provider"
 	"github.com/thanhhaudev/kizunax-plugin-cc/internal/state"
 )
 

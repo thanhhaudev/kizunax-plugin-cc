@@ -3,10 +3,10 @@ package cli
 import (
 	"fmt"
 
-	xerrors "github.com/thanhhaudev/kizunax-plugin-cc/internal/errors"
+	xerrors "github.com/thanhhaudev/kizunax-plugin-cc/pkg/errors"
 )
 
-const Version = "0.13.0"
+const Version = "0.14.0"
 
 func Dispatch(args []string) error {
 	if len(args) == 0 {

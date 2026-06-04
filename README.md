@@ -54,6 +54,10 @@ It asks for provider (`openai` or `anthropic`), base URL, model, and API key. Th
 
 Each command accepts flags. See `plugins/kizunax/commands/` for details.
 
+## License
+
+[MIT](LICENSE). Inspired by [codex-plugin-cc](https://github.com/openai/codex-plugin-cc).
+
 ## Uninstall
 
 macOS / Linux:

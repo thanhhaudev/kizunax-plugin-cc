@@ -3,7 +3,7 @@ package cli
 import (
 	"io"
 
-	"github.com/thanhhaudev/kizunax-plugin-cc/internal/render"
+	"github.com/thanhhaudev/kizunax-plugin-cc/pkg/render"
 	"github.com/thanhhaudev/kizunax-plugin-cc/internal/state"
 	"github.com/thanhhaudev/kizunax-plugin-cc/internal/usage"
 )

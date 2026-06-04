@@ -8,10 +8,10 @@ import (
 	"io"
 	"time"
 
-	"github.com/thanhhaudev/kizunax-plugin-cc/internal/diff"
-	"github.com/thanhhaudev/kizunax-plugin-cc/internal/render"
+	"github.com/thanhhaudev/kizunax-plugin-cc/pkg/diff"
+	"github.com/thanhhaudev/kizunax-plugin-cc/pkg/render"
 	"github.com/thanhhaudev/kizunax-plugin-cc/internal/runner"
-	"github.com/thanhhaudev/kizunax-plugin-cc/internal/schema"
+	"github.com/thanhhaudev/kizunax-plugin-cc/pkg/schema"
 	"github.com/thanhhaudev/kizunax-plugin-cc/internal/state"
 )
 

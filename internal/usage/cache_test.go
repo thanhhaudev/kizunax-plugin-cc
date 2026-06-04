@@ -13,7 +13,7 @@ import (
 func makeWS(t *testing.T) state.WorkspaceDir {
 	t.Helper()
 	tmp := t.TempDir()
-	ws := state.WorkspaceDir{Root: tmp}
+	ws := state.NewWorkspaceDir(tmp)
 	if err := os.MkdirAll(ws.JobsDir(), 0o700); err != nil {
 		t.Fatal(err)
 	}

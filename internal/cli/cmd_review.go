@@ -3,20 +3,23 @@ package cli
 import (
 	"context"
 	"fmt"
+	"io"
 	"os"
+	"path/filepath"
 	"time"
 
 	"github.com/thanhhaudev/kizunax-plugin-cc/internal/config"
-	"github.com/thanhhaudev/kizunax-plugin-cc/internal/diff"
-	xerrors "github.com/thanhhaudev/kizunax-plugin-cc/internal/errors"
-	"github.com/thanhhaudev/kizunax-plugin-cc/internal/git"
-	"github.com/thanhhaudev/kizunax-plugin-cc/internal/glossary"
+	"github.com/thanhhaudev/kizunax-plugin-cc/pkg/diff"
+	xerrors "github.com/thanhhaudev/kizunax-plugin-cc/pkg/errors"
+	"github.com/thanhhaudev/kizunax-plugin-cc/pkg/git"
+	"github.com/thanhhaudev/kizunax-plugin-cc/pkg/glossary"
 	"github.com/thanhhaudev/kizunax-plugin-cc/internal/job"
-	"github.com/thanhhaudev/kizunax-plugin-cc/internal/prompt"
-	"github.com/thanhhaudev/kizunax-plugin-cc/internal/render"
+	"github.com/thanhhaudev/kizunax-plugin-cc/pkg/prompt"
+	"github.com/thanhhaudev/kizunax-plugin-cc/pkg/render"
 	"github.com/thanhhaudev/kizunax-plugin-cc/internal/runner"
 	"github.com/thanhhaudev/kizunax-plugin-cc/internal/state"
 	"github.com/thanhhaudev/kizunax-plugin-cc/internal/usage"
+	"github.com/thanhhaudev/kizunax-plugin-cc/pkg/bundlelog"
 )
 
 // kindFromMode maps a prompt mode to the corresponding job.Kind.
@@ -128,6 +131,23 @@ func runReviewWithMode(args []string, mode prompt.Mode) error {
 		wsDir = ws
 	}
 
+	var bundleSink io.Writer
+	if os.Getenv("KIZUNAX_BUNDLE_LOG") == "1" && wsDir.Root != "" {
+		logPath := filepath.Join(wsDir.Root, bundlelog.LogName)
+		backupPath := filepath.Join(wsDir.Root, bundlelog.BackupName)
+		// Rotate before opening for append — preserves v0.12.4 10 MiB cap behavior.
+		if info, err := os.Stat(logPath); err == nil && info.Size() >= bundlelog.SizeCapBytes {
+			_ = os.Rename(logPath, backupPath)
+		}
+		f, err := os.OpenFile(logPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600)
+		if err == nil {
+			bundleSink = f
+			defer f.Close()
+		} else {
+			fmt.Fprintf(os.Stderr, "[warn] could not open bundle log %s: %v\n", logPath, err)
+		}
+	}
+
 	ctx := context.Background()
 	start := time.Now()
 	result, runErr := runner.Run(ctx, pluginRoot, p, bundle, runner.Options{
@@ -145,6 +165,7 @@ func runReviewWithMode(args []string, mode prompt.Mode) error {
 		WorkspaceRoot: cwd,
 		Verbose:       verbose,
 		ForceRescan:   rescan,
+		BundleLogSink: bundleSink,
 	})
 	end := time.Now()
 	dur := end.Sub(start)

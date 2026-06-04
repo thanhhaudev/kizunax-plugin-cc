@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/thanhhaudev/kizunax-plugin-cc/internal/schema"
+	"github.com/thanhhaudev/kizunax-plugin-cc/pkg/schema"
 )
 
 func TestCanonicalizeFindings_ExactMatchKept(t *testing.T) {

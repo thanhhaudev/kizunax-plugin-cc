@@ -10,8 +10,8 @@ import (
 	"sort"
 	"time"
 
-	xerrors "github.com/thanhhaudev/kizunax-plugin-cc/internal/errors"
-	"github.com/thanhhaudev/kizunax-plugin-cc/internal/index"
+	xerrors "github.com/thanhhaudev/kizunax-plugin-cc/pkg/errors"
+	"github.com/thanhhaudev/kizunax-plugin-cc/pkg/index"
 	"github.com/thanhhaudev/kizunax-plugin-cc/internal/state"
 )
 

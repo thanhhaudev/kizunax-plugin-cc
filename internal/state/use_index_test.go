@@ -8,7 +8,7 @@ import (
 
 func TestUseIndexState_RoundTrip(t *testing.T) {
 	tmp := t.TempDir()
-	ws := WorkspaceDir{Root: tmp}
+	ws := NewWorkspaceDir(tmp)
 
 	want := UseIndexState{Enabled: true}
 	if err := SaveUseIndex(ws, want); err != nil {
@@ -26,7 +26,7 @@ func TestUseIndexState_RoundTrip(t *testing.T) {
 
 func TestUseIndexState_MissingFileTreatedAsDisabled(t *testing.T) {
 	tmp := t.TempDir()
-	ws := WorkspaceDir{Root: tmp}
+	ws := NewWorkspaceDir(tmp)
 
 	got, err := LoadUseIndex(ws)
 	if err != nil {
@@ -39,7 +39,7 @@ func TestUseIndexState_MissingFileTreatedAsDisabled(t *testing.T) {
 
 func TestUseIndexState_CorruptFileTreatedAsDisabled(t *testing.T) {
 	tmp := t.TempDir()
-	ws := WorkspaceDir{Root: tmp}
+	ws := NewWorkspaceDir(tmp)
 
 	if err := os.WriteFile(ws.UseIndexPath(), []byte("{not json"), 0o600); err != nil {
 		t.Fatal(err)
@@ -56,7 +56,7 @@ func TestUseIndexState_CorruptFileTreatedAsDisabled(t *testing.T) {
 
 func TestUseIndexState_AtomicWrite(t *testing.T) {
 	tmp := t.TempDir()
-	ws := WorkspaceDir{Root: tmp}
+	ws := NewWorkspaceDir(tmp)
 
 	want := UseIndexState{Enabled: true}
 	if err := SaveUseIndex(ws, want); err != nil {

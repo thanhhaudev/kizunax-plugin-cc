@@ -8,11 +8,11 @@ import (
 	"os"
 
 	"github.com/thanhhaudev/kizunax-plugin-cc/internal/config"
-	"github.com/thanhhaudev/kizunax-plugin-cc/internal/diff"
-	xerrors "github.com/thanhhaudev/kizunax-plugin-cc/internal/errors"
-	"github.com/thanhhaudev/kizunax-plugin-cc/internal/git"
+	"github.com/thanhhaudev/kizunax-plugin-cc/pkg/diff"
+	xerrors "github.com/thanhhaudev/kizunax-plugin-cc/pkg/errors"
+	"github.com/thanhhaudev/kizunax-plugin-cc/pkg/git"
 	"github.com/thanhhaudev/kizunax-plugin-cc/internal/hooks"
-	"github.com/thanhhaudev/kizunax-plugin-cc/internal/prompt"
+	"github.com/thanhhaudev/kizunax-plugin-cc/pkg/prompt"
 	"github.com/thanhhaudev/kizunax-plugin-cc/internal/runner"
 	"github.com/thanhhaudev/kizunax-plugin-cc/internal/state"
 )

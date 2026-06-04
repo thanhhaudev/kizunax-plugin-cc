@@ -4,7 +4,7 @@ import (
 	"os"
 	"path/filepath"
 
-	xerrors "github.com/thanhhaudev/kizunax-plugin-cc/internal/errors"
+	xerrors "github.com/thanhhaudev/kizunax-plugin-cc/pkg/errors"
 )
 
 // ResolvePluginRoot returns the plugins/kizunax/ directory containing

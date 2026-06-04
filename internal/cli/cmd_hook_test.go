@@ -18,7 +18,7 @@ func TestSessionCleanup_OnStart_WritesEnvFile(t *testing.T) {
 	stdin := strings.NewReader(`{"hook_event_name":"SessionStart","session_id":"sess-xyz","cwd":"` + tmp + `"}`)
 	t.Setenv("CLAUDE_ENV_FILE", envFile)
 
-	ws := state.WorkspaceDir{Root: t.TempDir()}
+	ws := state.NewWorkspaceDir(t.TempDir())
 
 	var stdout, stderr bytes.Buffer
 	runHookSessionCleanup(ws, stdin, &stdout, &stderr)
@@ -34,7 +34,7 @@ func TestSessionCleanup_OnEnd_DoesNotWriteEnvFile(t *testing.T) {
 	envFile := filepath.Join(tmp, "env.sh")
 	t.Setenv("CLAUDE_ENV_FILE", envFile)
 
-	ws := state.WorkspaceDir{Root: t.TempDir()}
+	ws := state.NewWorkspaceDir(t.TempDir())
 	if err := os.MkdirAll(ws.JobsDir(), 0o700); err != nil {
 		t.Fatal(err)
 	}

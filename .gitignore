@@ -1,5 +1,5 @@
 .DS_Store
-plugins/kizunax/bin/kizunax
+plugins/kizunax/bin/
 *.test
 *.out
 /coverage.out
