@@ -4,4 +4,4 @@ go 1.21
 
 require github.com/tetratelabs/wazero v1.8.0 // indirect
 
-require github.com/thanhhaudev/llmreviewkit v1.0.0
+require github.com/thanhhaudev/llmreviewkit v1.1.0
