@@ -38,6 +38,7 @@ func (k Kind) String() string {
 
 // Location is one occurrence of a symbol in the workspace.
 type Location struct {
+	Name     string `json:"name"`               // identifier
 	File     string `json:"file"`               // repo-relative
 	Line     int    `json:"line"`
 	Kind     Kind   `json:"kind"`
@@ -64,4 +65,62 @@ type Index struct {
 	Files   map[string]*FileIndex `json:"files"`
 	// Derived on Load; not serialized.
 	bySymbol map[string][]Location `json:"-"`
+}
+
+// RebuildLookups (re)builds the bySymbol derived map. Call after LoadJSON
+// or after any mutation of Files. Idempotent.
+func (idx *Index) RebuildLookups() {
+	idx.bySymbol = make(map[string][]Location)
+	for _, fi := range idx.Files {
+		for _, loc := range fi.Defs {
+			idx.bySymbol[loc.Name] = append(idx.bySymbol[loc.Name], loc)
+		}
+		for _, loc := range fi.Refs {
+			idx.bySymbol[loc.Name] = append(idx.bySymbol[loc.Name], loc)
+		}
+	}
+}
+
+// LookupDefs returns all definition Locations for the given symbol name.
+// If pkg is non-empty, only Locations whose Pkg matches are returned;
+// pkg="" matches any package (bare-name lookup).
+func (idx *Index) LookupDefs(name, pkg string) []Location {
+	if idx.bySymbol == nil {
+		return nil
+	}
+	var out []Location
+	for _, loc := range idx.bySymbol[name] {
+		if loc.Kind != SymDef {
+			continue
+		}
+		if pkg != "" && loc.Pkg != pkg {
+			continue
+		}
+		out = append(out, loc)
+	}
+	return out
+}
+
+// LookupRefs returns all non-def Locations (SymCall, SymTypeRef) for the
+// given symbol name. pkg filter same as LookupDefs.
+func (idx *Index) LookupRefs(name, pkg string) []Location {
+	if idx.bySymbol == nil {
+		return nil
+	}
+	var out []Location
+	for _, loc := range idx.bySymbol[name] {
+		if loc.Kind == SymDef || loc.Kind == SymImport {
+			continue
+		}
+		if pkg != "" && loc.Pkg != pkg {
+			continue
+		}
+		out = append(out, loc)
+	}
+	return out
+}
+
+// Healthy reports whether the index is loaded and ready to query.
+func (idx *Index) Healthy() bool {
+	return idx != nil && idx.Version == CurrentSchemaVersion && idx.bySymbol != nil
 }
