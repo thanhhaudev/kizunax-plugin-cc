@@ -106,15 +106,21 @@ func Run(ctx context.Context, pluginRoot string, p provider.Provider, bundle dif
 		wsOverride = &inner
 	}
 
+	expandCallers, expandTypeDefs, expandTests := resolveExpansion(opts, opts.WorkspaceDir)
+	anyExpand := expandCallers || expandTypeDefs || expandTests
+
 	engCfg := engine.Config{
 		Provider:               p,
 		WorkspaceRoot:          opts.WorkspaceRoot,
 		StateWorkspaceOverride: wsOverride,
 		PromptRoot:             pluginRoot,
 		UseIndex:               useIdx,
-		EnrichBudget:           32 * 1024, // preserve v0.12.4 cap; explicit so the engine default doesn't drift
+		EnrichBudget:           enrichBudgetFor(anyExpand),
 		BundleLogSink:          opts.BundleLogSink,
 		Verbose:                opts.Verbose,
+		ExpandCallers:          expandCallers,
+		ExpandTypeDefs:         expandTypeDefs,
+		ExpandTests:            expandTests,
 	}
 
 	eng, err := engine.New(engCfg)
@@ -201,6 +207,17 @@ func helperQuotaOK(ws state.WorkspaceDir, apiKey string) bool {
 		return false
 	}
 	return true
+}
+
+// enrichBudgetFor returns the EnrichBudget passed to engine.Config.
+// When any expansion strategy is enabled, return 0 so engine.New
+// auto-bumps to 96 KB (the v1.1.0 default for expansion). Otherwise
+// preserve the v0.15.0 32 KB baseline.
+func enrichBudgetFor(anyExpand bool) int {
+	if anyExpand {
+		return 0
+	}
+	return 32 * 1024
 }
 
 // useIndexResolver returns true if v0.13 index-backed resolver should be
