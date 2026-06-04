@@ -19,7 +19,22 @@ package queries
 // dlmalloc after prior grammar operations. WalkNamedChildren bypasses
 // ts_query_new entirely and is always safe.
 const PythonTags = `
-(function_definition) @name.definition.function
+(function_definition
+  name: (identifier) @name.definition.function)
 
-(class_definition) @name.definition.class
+(class_definition
+  name: (identifier) @name.definition.class)
+
+(import_statement
+  name: (dotted_name) @name.reference.import)
+
+(import_from_statement
+  module_name: (dotted_name) @name.reference.import)
+
+(call
+  function: (identifier) @name.reference.call)
+
+(call
+  function: (attribute
+    attribute: (identifier) @name.reference.call))
 `
