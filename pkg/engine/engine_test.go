@@ -63,13 +63,14 @@ func TestEngine_BasicReview(t *testing.T) {
 }
 
 func TestEngine_RequiredFieldsValidated(t *testing.T) {
-	// Missing Provider
+	// Missing Provider — must error regardless of WorkspaceRoot.
 	if _, err := engine.New(engine.Config{WorkspaceRoot: "/tmp"}); err == nil {
 		t.Fatal("expected error for missing Provider")
 	}
-	// Missing WorkspaceRoot
-	if _, err := engine.New(engine.Config{Provider: mock.New("", 0, 0)}); err == nil {
-		t.Fatal("expected error for missing WorkspaceRoot")
+	// Empty WorkspaceRoot is now allowed; enrichment is simply skipped
+	// when WorkspaceRoot is not set. Engine.New must succeed.
+	if _, err := engine.New(engine.Config{Provider: mock.New("", 0, 0)}); err != nil {
+		t.Fatalf("expected New to succeed with empty WorkspaceRoot, got: %v", err)
 	}
 }
 

@@ -10,6 +10,7 @@ import (
 
 	"github.com/thanhhaudev/kizunax-plugin-cc/pkg/prompt"
 	"github.com/thanhhaudev/kizunax-plugin-cc/pkg/provider"
+	"github.com/thanhhaudev/kizunax-plugin-cc/pkg/statedir"
 )
 
 // Config configures an Engine. Provider and WorkspaceRoot are required;
@@ -30,7 +31,15 @@ type Config struct {
 	// StateDir is the on-disk directory base for index files + telemetry.
 	// If empty, defaults to os.TempDir() + "/llmreviewkit". The actual
 	// workspace state lives under <StateDir>/<workspace-hash>/.
+	// Ignored when StateWorkspaceOverride is set.
 	StateDir string
+
+	// StateWorkspaceOverride, if non-nil, bypasses the statedir.Resolve hash
+	// computation entirely and uses the provided directory as the workspace
+	// state root. Intended for kizunax wrapper callers that have already
+	// resolved the state directory via internal/state.Resolve and want to
+	// guarantee the engine uses the exact same path without re-hashing.
+	StateWorkspaceOverride *statedir.WorkspaceDir
 
 	// PromptRoot is a directory containing custom prompt templates. If
 	// empty, embedded defaults are used (pkg/prompt/embedded/*.md).

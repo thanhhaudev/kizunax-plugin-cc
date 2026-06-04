@@ -32,21 +32,29 @@ func New(cfg Config) (*Engine, error) {
 	if cfg.Provider == nil {
 		return nil, fmt.Errorf("engine: Config.Provider is required")
 	}
-	if cfg.WorkspaceRoot == "" {
-		return nil, fmt.Errorf("engine: Config.WorkspaceRoot is required")
-	}
+	// WorkspaceRoot is required unless callers explicitly skip enrichment
+	// by leaving it empty (in which case Review() will skip symbol extraction).
+	// SyncIndex also requires a non-empty WorkspaceRoot.
 	if cfg.EnrichBudget == 0 {
 		cfg.EnrichBudget = 32 * 1024
 	}
 
-	base := cfg.StateDir
-	if base == "" {
-		base = filepath.Join(os.TempDir(), "llmreviewkit")
+	var ws statedir.WorkspaceDir
+	if cfg.StateWorkspaceOverride != nil {
+		ws = *cfg.StateWorkspaceOverride
+	} else if cfg.WorkspaceRoot != "" {
+		base := cfg.StateDir
+		if base == "" {
+			base = filepath.Join(os.TempDir(), "llmreviewkit")
+		}
+		var resolveErr error
+		ws, resolveErr = statedir.Resolve(base, cfg.WorkspaceRoot)
+		if resolveErr != nil {
+			return nil, fmt.Errorf("engine: resolve state dir: %w", resolveErr)
+		}
 	}
-	ws, err := statedir.Resolve(base, cfg.WorkspaceRoot)
-	if err != nil {
-		return nil, fmt.Errorf("engine: resolve state dir: %w", err)
-	}
+	// If both WorkspaceRoot and StateWorkspaceOverride are unset, stateWS.Root
+	// is empty — enrichment and SyncIndex are both no-ops in that case.
 	return &Engine{cfg: cfg, stateWS: ws}, nil
 }
 
@@ -90,7 +98,9 @@ func (e *Engine) Review(ctx context.Context, bundle diff.Bundle, opts ReviewOpti
 	result := &Result{Stats: ResolveStats{ResolverPath: "v1"}}
 
 	// Enrichment — strictly additive: any failure → empty refs, review proceeds.
-	if len(bundle.Diff) > 0 || len(bundle.Untracked) > 0 {
+	// WorkspaceRoot must be set (non-empty) to perform symbol extraction;
+	// without a real root there is nowhere to search for definitions.
+	if e.cfg.WorkspaceRoot != "" && (len(bundle.Diff) > 0 || len(bundle.Untracked) > 0) {
 		symbols.SetWorkspaceRoot(e.cfg.WorkspaceRoot)
 		syms := symbols.ExtractFromBundle(bundle)
 		diffPaths := diff.Paths(bundle)
