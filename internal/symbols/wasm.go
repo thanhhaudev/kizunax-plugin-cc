@@ -273,15 +273,20 @@ func extractPythonViaWalk(ctx context.Context, lang *treesitter.Language, conten
 			extractPythonImportNames(ctx, lang, tree, n.NodeRaw[:], dottedNameID, aliasID, nameFieldID, content, emit)
 		case callID:
 			if s, e, ok := lang.NodeChildByFieldID(ctx, tree, n.NodeRaw[:], functionFieldID); ok {
-				// Determine if function child is an attribute (method call) by checking type.
-				// We don't have its type ID directly — re-look up by inspecting bytes.
-				// Heuristic: if the byte range contains '.', take the last segment.
 				fnText := sliceBytes(content, s, e)
 				if attributeID != 0 && strings.Contains(fnText, ".") {
-					// Take last segment (the method name)
-					if dot := strings.LastIndex(fnText, "."); dot != -1 {
-						method := fnText[dot+1:]
-						emit(method, SymCall, s+uint32(dot)+1)
+					// Method call: emit terminal name as Name, chain as Pkg.
+					// e.g. self.db.session.commit() → Name="commit", Pkg="self.db.session"
+					name, pkg := splitDottedPath(fnText)
+					if name != "" {
+						dot := strings.LastIndex(fnText, ".")
+						out = append(out, Symbol{
+							Name: name,
+							Pkg:  pkg,
+							Kind: SymCall,
+							File: path,
+							Line: lineAt(content, s+uint32(dot)+1),
+						})
 					}
 				} else {
 					emit(fnText, SymCall, s)
