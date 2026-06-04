@@ -68,6 +68,11 @@ type Options struct {
 	// ForceRescan, when true, deletes the on-disk index before running the
 	// index-backed resolver (v0.13). Only meaningful when KIZUNAX_USE_INDEX=1.
 	ForceRescan bool
+
+	// BundleLogSink, if non-nil, receives one jsonl line per Review() call.
+	// nil disables telemetry. The kizunax CLI wrapper sets this from
+	// KIZUNAX_BUNDLE_LOG=1 by opening the rotation-managed log file.
+	BundleLogSink io.Writer
 }
 
 func Run(ctx context.Context, pluginRoot string, p provider.Provider, bundle diff.Bundle, opts Options) (Result, error) {
@@ -139,10 +144,10 @@ func Run(ctx context.Context, pluginRoot string, p provider.Provider, bundle dif
 				fmt.Fprintf(os.Stderr, "[warn] %s\n", w)
 			}
 		}
-		if bundlelog.Enabled() {
+		if opts.BundleLogSink != nil {
 			entry := assembleBundleLogEntry(bundle, attachRes, stats, opts.WorkspaceDir,
 				indexHits, indexMisses, resolverPath)
-			bundlelog.Append(opts.WorkspaceDir, entry)
+			_ = bundlelog.AppendTo(opts.BundleLogSink, entry)
 		}
 	}
 
