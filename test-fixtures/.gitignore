@@ -1,0 +1,2 @@
+# Grammar binaries are not committed — pulled by fetch.sh.
+*.wasm

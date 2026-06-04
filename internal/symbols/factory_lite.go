@@ -11,3 +11,7 @@ func useWASM(ext string) bool { return false }
 func newWASMExtractor(ext string) Extractor {
 	return &RegexExtractor{lang: extToLang(ext)}
 }
+
+// SetWorkspaceRoot is a no-op in lite builds — the tree-sitter runtime is
+// not compiled in, so workspace-based grammar resolution is skipped.
+func SetWorkspaceRoot(_ string) {}

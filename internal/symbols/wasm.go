@@ -3,18 +3,66 @@
 package symbols
 
 import (
+	"context"
 	"embed"
+	"fmt"
+	"os"
 	"path/filepath"
+	"strings"
+	"sync"
 
-	// wazero is the pure-Go WebAssembly runtime intended for tree-sitter
-	// grammar execution. Imported here so the dependency is pinned in
-	// go.mod even before the WASM bridge is wired. Per v0.12.1 scope
-	// split, full WASM extraction lands in v0.12.2.
-	_ "github.com/tetratelabs/wazero"
+	"github.com/thanhhaudev/kizunax-plugin-cc/internal/symbols/treesitter"
 )
 
 //go:embed all:grammars
 var grammarFS embed.FS
+
+// workspaceRoot is set by the runner before bundle extraction so the
+// resolver knows where to look for project-local grammars.
+var (
+	workspaceRoot   string
+	workspaceRootMu sync.Mutex
+)
+
+// SetWorkspaceRoot configures the project root used for project-local
+// grammar lookup (./.kizunax/grammars/). Must be called by the runner
+// before ExtractFromBundle. Safe to call concurrently.
+func SetWorkspaceRoot(ws string) {
+	workspaceRootMu.Lock()
+	defer workspaceRootMu.Unlock()
+	workspaceRoot = ws
+}
+
+func getWorkspaceRoot() string {
+	workspaceRootMu.Lock()
+	defer workspaceRootMu.Unlock()
+	return workspaceRoot
+}
+
+// hintEmitted tracks per-grammar verbose hints to avoid log spam.
+var (
+	hintEmitted = map[string]bool{}
+	hintMu      sync.Mutex
+)
+
+func emitHintOnce(grammarName string) {
+	hintMu.Lock()
+	defer hintMu.Unlock()
+	if hintEmitted[grammarName] {
+		return
+	}
+	hintEmitted[grammarName] = true
+	fmt.Fprintf(os.Stderr,
+		"[verbose] grammars: no .wasm found for %s — try 'kizunax grammars install %s'\n",
+		grammarName, grammarName)
+}
+
+// langCache caches loaded grammars across extractor instances so each
+// grammar only loads once per session.
+var (
+	langCache   = map[string]*treesitter.Language{}
+	langCacheMu sync.Mutex
+)
 
 // wasmGrammarNameFor maps a file extension to a tree-sitter grammar
 // name. Add entries here when new grammars are bundled. Returns ""
@@ -73,23 +121,528 @@ type wasmExtractor struct {
 }
 
 func (e *wasmExtractor) Extract(path string, content []byte) []Symbol {
-	// Try to load grammar from embed.
-	data, err := grammarFS.ReadFile(filepath.Join("grammars", e.grammarName+".wasm"))
-	if err != nil || len(data) == 0 {
-		// Grammar not present (not yet compiled or excluded).
-		// Fall back to regex — same precision as -tags lite for this file.
-		return (&RegexExtractor{lang: extToLang(filepath.Ext(path))}).Extract(path, content)
+	ctx := context.Background()
+
+	// Resolve grammar path via project-local then global lookup.
+	resolver := DefaultResolver(getWorkspaceRoot())
+	grammarPath := resolver.Find(e.grammarName)
+	if grammarPath == "" {
+		// No compiled .wasm found — emit a once-per-session verbose hint
+		// and fall back to regex so enrichment is still useful.
+		emitHintOnce(e.grammarName)
+		return regexFallback(path, content)
 	}
 
-	// TODO(v0.12.2): wire wazero runtime + tree-sitter parse here.
-	// v0.12.1 keeps the regex fallback in place while per-language
-	// regex patterns deliver non-Go enrichment value. Full WASM
-	// extraction lands in v0.12.2.
+	lang, err := getCachedLang(ctx, e.grammarName, grammarPath)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "[warn] treesitter load %s: %v\n", e.grammarName, err)
+		return regexFallback(path, content)
+	}
+
+	queryStr := queryForGrammar(e.grammarName)
+	if queryStr == "" {
+		// No tags.scm shipped for this grammar yet (others pending compilation
+		// in Task 14). typescript and python are wired in Tasks 17/18.
+		return regexFallback(path, content)
+	}
+
+	// Python + PHP use cursor-based tree walking instead of ts_query_new.
 	//
-	// To enable real WASM parsing:
-	//   1. Set up wazero runtime via sync.Once (memory map grammar).
-	//   2. Call exported tree-sitter parse function with content bytes.
-	//   3. Walk returned tree, mapping nodes to Symbol structs.
-	// See: https://github.com/tree-sitter/tree-sitter/blob/master/lib/binding_web/binding.ts
+	// web-tree-sitter 0.26.9 + tree-sitter-python@0.23.6 + tree-sitter-php@0.24.2
+	// reliably trap ts_query_new with OOB memory access from the very first call,
+	// regardless of whether the runtime is fresh or has been used for other
+	// grammars. The cursor-based walker bypasses ts_query_new entirely and
+	// produces equivalent (or richer) symbol coverage compared to the tags.scm
+	// query path.
+	//
+	// TypeScript / TSX still use the query path because that grammar's
+	// ts_query_new succeeds after a small number of dlmalloc warm-up retries
+	// (see internal/symbols/treesitter/query.go).
+	if e.grammarName == "python" {
+		return extractPythonViaWalk(ctx, lang, content, path)
+	}
+	if e.grammarName == "php" {
+		return extractPHPViaWalk(ctx, lang, content, path)
+	}
+
+	// IMPORTANT: NewQuery must be called BEFORE Parse — see Task 8 finding.
+	q, err := lang.NewQuery(ctx, queryStr)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "[warn] treesitter query %s: %v\n", e.grammarName, err)
+		return regexFallback(path, content)
+	}
+	defer q.Close(ctx)
+
+	tree, err := lang.Parse(ctx, content)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "[warn] treesitter parse %s: %v\n", path, err)
+		return regexFallback(path, content)
+	}
+	defer tree.Close(ctx)
+
+	caps, err := q.Exec(ctx, tree.RootNode(ctx))
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "[warn] treesitter exec %s: %v\n", e.grammarName, err)
+		return regexFallback(path, content)
+	}
+
+	return scanCaptures(caps, content, path)
+}
+
+// extractPythonViaWalk extracts Python symbols using tree cursor traversal,
+// bypassing ts_query_new which traps OOB for tree-sitter-python@0.23.x +
+// web-tree-sitter 0.26.9 even on a fresh runtime.
+//
+// Coverage matches the v0.12.1 regex baseline plus better precision:
+//
+//   - function_definition.name           → SymDef
+//   - class_definition.name              → SymDef
+//   - import_statement names             → SymImport
+//   - import_from_statement names        → SymImport (each imported name)
+//   - call.function                      → SymCall (plain function call: foo())
+//   - call.function = attribute          → SymCall (method call: obj.foo()) — emits the method name
+func extractPythonViaWalk(ctx context.Context, lang *treesitter.Language, content []byte, path string) []Symbol {
+	tree, err := lang.Parse(ctx, content)
+	if err != nil {
+		return regexFallback(path, content)
+	}
+	defer tree.Close(ctx)
+	if tree.RootNode(ctx).Type(ctx) == "ERROR" {
+		return regexFallback(path, content)
+	}
+
+	// Symbol type IDs.
+	fnDefID := lang.SymbolIDForName(ctx, "function_definition", true)
+	classDefID := lang.SymbolIDForName(ctx, "class_definition", true)
+	importID := lang.SymbolIDForName(ctx, "import_statement", true)
+	importFromID := lang.SymbolIDForName(ctx, "import_from_statement", true)
+	callID := lang.SymbolIDForName(ctx, "call", true)
+	attributeID := lang.SymbolIDForName(ctx, "attribute", true)
+	dottedNameID := lang.SymbolIDForName(ctx, "dotted_name", true)
+	aliasID := lang.SymbolIDForName(ctx, "aliased_import", true)
+
+	// Field IDs.
+	nameFieldID := lang.FieldIDForName(ctx, "name")
+	functionFieldID := lang.FieldIDForName(ctx, "function")
+	attributeFieldID := lang.FieldIDForName(ctx, "attribute")
+	moduleNameFieldID := lang.FieldIDForName(ctx, "module_name")
+
+	matchIDs := make([]uint16, 0, 6)
+	for _, id := range []uint16{fnDefID, classDefID, importID, importFromID, callID} {
+		if id != 0 {
+			matchIDs = append(matchIDs, id)
+		}
+	}
+	if len(matchIDs) == 0 {
+		return regexFallback(path, content)
+	}
+
+	nodes, err := lang.WalkAllNamedNodesNoCursor(ctx, tree, matchIDs)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "[warn] treesitter walk python %s: %v\n", path, err)
+		return regexFallback(path, content)
+	}
+	if len(nodes) == 0 {
+		return regexFallback(path, content)
+	}
+
+	out := make([]Symbol, 0, len(nodes))
+	emit := func(name string, kind SymbolKind, byteOff uint32) {
+		if name == "" {
+			return
+		}
+		out = append(out, Symbol{Name: name, Kind: kind, File: path, Line: lineAt(content, byteOff)})
+	}
+
+	for _, n := range nodes {
+		switch n.TypeID {
+		case fnDefID, classDefID:
+			if s, e, ok := lang.NodeChildByFieldID(ctx, tree, n.NodeRaw[:], nameFieldID); ok {
+				emit(sliceBytes(content, s, e), SymDef, s)
+			}
+		case importID:
+			// Children: dotted_name | aliased_import (with `name` field=dotted_name).
+			extractPythonImportNames(ctx, lang, tree, n.NodeRaw[:], dottedNameID, aliasID, nameFieldID, content, emit)
+		case importFromID:
+			// module_name field + a list of dotted_name | aliased_import children.
+			if s, e, ok := lang.NodeChildByFieldID(ctx, tree, n.NodeRaw[:], moduleNameFieldID); ok {
+				emit(sliceBytes(content, s, e), SymImport, s)
+			}
+			// Iterate named children, skip the module_name child (already emitted).
+			extractPythonImportNames(ctx, lang, tree, n.NodeRaw[:], dottedNameID, aliasID, nameFieldID, content, emit)
+		case callID:
+			if s, e, ok := lang.NodeChildByFieldID(ctx, tree, n.NodeRaw[:], functionFieldID); ok {
+				// Determine if function child is an attribute (method call) by checking type.
+				// We don't have its type ID directly — re-look up by inspecting bytes.
+				// Heuristic: if the byte range contains '.', take the last segment.
+				fnText := sliceBytes(content, s, e)
+				if attributeID != 0 && strings.Contains(fnText, ".") {
+					// Take last segment (the method name)
+					if dot := strings.LastIndex(fnText, "."); dot != -1 {
+						method := fnText[dot+1:]
+						emit(method, SymCall, s+uint32(dot)+1)
+					}
+				} else {
+					emit(fnText, SymCall, s)
+				}
+				_ = e
+				_ = attributeFieldID
+			}
+		}
+	}
+	return out
+}
+
+// extractPythonImportNames iterates the named children of an import_statement
+// or import_from_statement and emits one SymImport per importable name.
+// Handles `import x`, `import x.y.z`, `import x as y`, `from m import x, y as z`.
+func extractPythonImportNames(ctx context.Context, lang *treesitter.Language, tree *treesitter.Tree, parentNodeRaw []byte, dottedNameID, aliasID uint16, nameFieldID uint32, content []byte, emit func(string, SymbolKind, uint32)) {
+	count := lang.NamedChildCount(ctx, tree, parentNodeRaw)
+	for i := uint32(0); i < count; i++ {
+		start, end, childType, ok := lang.NamedChild(ctx, tree, parentNodeRaw, i)
+		if !ok {
+			continue
+		}
+		switch childType {
+		case dottedNameID:
+			emit(sliceBytes(content, start, end), SymImport, start)
+		case aliasID:
+			// `import x as y`: emit the `name` field child (the dotted_name).
+			// We need the aliased_import's raw bytes to look up its `name`
+			// field. Read them now.
+			if aliasID == 0 {
+				continue
+			}
+			// Re-fetch the child node's raw bytes via NamedChild (which fills
+			// transfer buffer); we already have start/end but not the 20-byte
+			// TSNode struct. NodeChildByFieldID on the parent doesn't help here
+			// because that returns a single field. As a fallback we just emit
+			// the entire aliased_import text up to " as ".
+			text := sliceBytes(content, start, end)
+			if idx := strings.Index(text, " as "); idx > 0 {
+				emit(text[:idx], SymImport, start)
+			} else {
+				emit(text, SymImport, start)
+			}
+		}
+	}
+	_ = nameFieldID
+}
+
+// sliceBytes returns a bounded substring of src[start:end]. Returns "" if
+// bounds are out of range.
+func sliceBytes(src []byte, start, end uint32) string {
+	if start >= end || int(end) > len(src) {
+		return ""
+	}
+	return string(src[start:end])
+}
+
+// extractPHPViaWalk extracts PHP symbols using tree cursor traversal. See
+// extractPythonViaWalk for the rationale (ts_query_new traps OOB on the
+// PHP 0.24.2 grammar).
+//
+// Coverage:
+//
+//   - function_definition.name             → SymDef
+//   - method_declaration.name              → SymDef
+//   - class_declaration.name               → SymDef
+//   - interface_declaration.name           → SymDef
+//   - trait_declaration.name               → SymDef
+//   - namespace_use_clause's first named child → SymImport
+//   - scoped_call_expression.name (with receiver in scope field) → SymCall
+//   - member_call_expression.name          → SymCall
+//   - nullsafe_member_call_expression.name → SymCall
+//   - function_call_expression.function    → SymCall (plain calls like foo())
+func extractPHPViaWalk(ctx context.Context, lang *treesitter.Language, content []byte, path string) []Symbol {
+	tree, err := lang.Parse(ctx, content)
+	if err != nil {
+		// Don't warn at INFO level — the PHP grammar has known false-OOB
+		// traps on patterns like User::method($var). Fall back silently to
+		// regex; the user already got the v0.12.1 behaviour as a floor.
+		return regexFallback(path, content)
+	}
+	defer tree.Close(ctx)
+	// If the parser produced an ERROR-rooted tree, treat it as a parse
+	// failure and fall back to regex.
+	if tree.RootNode(ctx).Type(ctx) == "ERROR" {
+		return regexFallback(path, content)
+	}
+
+	// Definition node IDs.
+	fnDefID := lang.SymbolIDForName(ctx, "function_definition", true)
+	methodDeclID := lang.SymbolIDForName(ctx, "method_declaration", true)
+	classDeclID := lang.SymbolIDForName(ctx, "class_declaration", true)
+	interfaceDeclID := lang.SymbolIDForName(ctx, "interface_declaration", true)
+	traitDeclID := lang.SymbolIDForName(ctx, "trait_declaration", true)
+
+	// Import.
+	useClauseID := lang.SymbolIDForName(ctx, "namespace_use_clause", true)
+
+	// Calls.
+	scopedCallID := lang.SymbolIDForName(ctx, "scoped_call_expression", true)
+	memberCallID := lang.SymbolIDForName(ctx, "member_call_expression", true)
+	nullsafeCallID := lang.SymbolIDForName(ctx, "nullsafe_member_call_expression", true)
+	funcCallID := lang.SymbolIDForName(ctx, "function_call_expression", true)
+
+	// Field IDs.
+	nameFieldID := lang.FieldIDForName(ctx, "name")
+	functionFieldID := lang.FieldIDForName(ctx, "function")
+
+	matchIDs := make([]uint16, 0, 16)
+	for _, id := range []uint16{
+		fnDefID, methodDeclID, classDeclID, interfaceDeclID, traitDeclID,
+		useClauseID,
+		scopedCallID, memberCallID, nullsafeCallID, funcCallID,
+	} {
+		if id != 0 {
+			matchIDs = append(matchIDs, id)
+		}
+	}
+	if len(matchIDs) == 0 {
+		return regexFallback(path, content)
+	}
+
+	nodes, err := lang.WalkAllNamedNodesNoCursor(ctx, tree, matchIDs)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "[warn] treesitter walk php %s: %v\n", path, err)
+		return regexFallback(path, content)
+	}
+	// If the walker found nothing, parsing likely produced an ERROR-rooted
+	// tree (PHP grammar bug on certain inputs — e.g. User::method($var)
+	// triggers a ts_parser_parse_wasm OOB on a fresh runtime and the OOB
+	// path returns from Parse with a tree but no usable children). Fall
+	// back to regex so enrichment still works.
+	if len(nodes) == 0 {
+		return regexFallback(path, content)
+	}
+
+	out := make([]Symbol, 0, len(nodes))
+	emit := func(name string, kind SymbolKind, byteOff uint32) {
+		if name == "" {
+			return
+		}
+		out = append(out, Symbol{Name: name, Kind: kind, File: path, Line: lineAt(content, byteOff)})
+	}
+
+	for _, n := range nodes {
+		switch n.TypeID {
+		case fnDefID, methodDeclID, classDeclID, interfaceDeclID, traitDeclID:
+			if s, e, ok := lang.NodeChildByFieldID(ctx, tree, n.NodeRaw[:], nameFieldID); ok {
+				emit(sliceBytes(content, s, e), SymDef, s)
+			}
+		case useClauseID:
+			// First named child is a qualified_name or name. Emit its full text
+			// as the import (the leaf 'name' child of a qualified_name is the
+			// short alias the rest of the file uses; we want that).
+			s, e, _, ok := lang.NamedChild(ctx, tree, n.NodeRaw[:], 0)
+			if ok {
+				text := sliceBytes(content, s, e)
+				// For qualified_name like \Foo\Bar, the alias is the last segment.
+				if idx := strings.LastIndex(text, `\`); idx != -1 {
+					emit(text[idx+1:], SymImport, s+uint32(idx)+1)
+				} else {
+					emit(text, SymImport, s)
+				}
+			}
+		case scopedCallID, memberCallID, nullsafeCallID:
+			if s, e, ok := lang.NodeChildByFieldID(ctx, tree, n.NodeRaw[:], nameFieldID); ok {
+				emit(sliceBytes(content, s, e), SymCall, s)
+			}
+		case funcCallID:
+			if s, e, ok := lang.NodeChildByFieldID(ctx, tree, n.NodeRaw[:], functionFieldID); ok {
+				text := sliceBytes(content, s, e)
+				// Strip leading namespace separator for fully-qualified calls.
+				if idx := strings.LastIndex(text, `\`); idx != -1 {
+					emit(text[idx+1:], SymCall, s+uint32(idx)+1)
+				} else {
+					emit(text, SymCall, s)
+				}
+				_ = e
+			}
+		}
+	}
+	return out
+}
+
+// regexFallback delegates to RegexExtractor for the given file, providing
+// the same symbol precision as the -tags lite build.
+func regexFallback(path string, content []byte) []Symbol {
 	return (&RegexExtractor{lang: extToLang(filepath.Ext(path))}).Extract(path, content)
+}
+
+// getCachedLang returns a cached Language for the given grammar path.
+//
+// Each grammar gets its OWN isolated wazero runtime — this is Fix 1 for
+// the v0.12.2 PHP-after-TS regression. Sharing a single runtime across
+// grammars causes ts_query_new OOB warm-up traps to corrupt dlmalloc
+// in a way that prevents subsequent grammars from working. Per-grammar
+// isolation eliminates that cross-contamination entirely.
+//
+// Cost: ~90 ms per grammar cold-start. With 3 grammars in a typical
+// review (php/ts/python) that adds ~270 ms — acceptable because the
+// alternative is silently regressing to regex.
+func getCachedLang(ctx context.Context, name, path string) (*treesitter.Language, error) {
+	langCacheMu.Lock()
+	defer langCacheMu.Unlock()
+	if lang, ok := langCache[path]; ok {
+		return lang, nil
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, fmt.Errorf("read grammar %s: %w", path, err)
+	}
+	rt, err := treesitter.NewRuntime(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("runtime: %w", err)
+	}
+	lang, err := rt.LoadGrammar(ctx, name, data)
+	if err != nil {
+		// Best-effort close to release the wazero runtime; the load
+		// failure is the real error returned to the caller.
+		_ = rt.Close(ctx)
+		return nil, fmt.Errorf("load grammar: %w", err)
+	}
+	langCache[path] = lang
+	return lang, nil
+}
+
+// phpTags is the tags.scm query for PHP (mirrors queries.PHPTags).
+// Inlined here to avoid an import cycle: symbols → symbols/queries → symbols.
+const phpTags = `
+(function_definition
+  name: (name) @name.definition.function)
+
+(method_declaration
+  name: (name) @name.definition.method)
+
+(class_declaration
+  name: (name) @name.definition.class)
+
+(interface_declaration
+  name: (name) @name.definition.interface)
+
+(trait_declaration
+  name: (name) @name.definition.trait)
+
+(scoped_call_expression
+  scope: (name) @receiver
+  name: (name) @name.reference.call)
+
+(nullsafe_member_call_expression
+  name: (name) @name.reference.call)
+
+(namespace_use_clause
+  (qualified_name (name) @name.reference.import))
+
+(namespace_use_clause
+  (name) @name.reference.import)
+`
+
+// typescriptTags is the tags.scm query for TypeScript/TSX (mirrors
+// queries.TypescriptTags). Inlined here to avoid an import cycle:
+// symbols → symbols/queries → symbols. Curated subset of upstream
+// tree-sitter-typescript@0.23.2 queries/tags.scm. Note: some patterns
+// (e.g. function_declaration) require the NewQuery retry mechanism in
+// the treesitter package to handle the dlmalloc warm-up needed by
+// grammars compiled with tree-sitter-cli 0.24.x.
+const typescriptTags = `
+(function_declaration
+  name: (identifier) @name.definition.function)
+
+(method_definition
+  name: (property_identifier) @name.definition.method)
+
+(class_declaration
+  name: (type_identifier) @name.definition.class)
+
+(interface_declaration
+  name: (type_identifier) @name.definition.interface)
+
+(type_alias_declaration
+  name: (type_identifier) @name.definition.type)
+
+(call_expression
+  function: [(identifier) @name.reference.call
+             (member_expression
+               property: (property_identifier) @name.reference.call)])
+
+(import_specifier
+  name: (identifier) @name.reference.import)
+
+(import_clause
+  (identifier) @name.reference.import)
+`
+
+// pythonTags is the tags.scm query for Python (mirrors queries.PythonTags).
+// Inlined here to avoid an import cycle: symbols → symbols/queries → symbols.
+//
+// NOTE: Python's production extraction path (extractPythonViaWalk) bypasses
+// ts_query_new entirely and uses tree cursor traversal instead. This const
+// is kept so queryForGrammar("python") returns non-empty, marking Python as
+// a "supported" grammar (non-empty → proceed; "" → regex fallback).
+//
+// Background: tree-sitter-python@0.23.x with web-tree-sitter 0.26.9 causes
+// ts_query_new to trigger OOB traps that corrupt the runtime's dlmalloc after
+// prior grammar operations, making all subsequent queries fail permanently.
+const pythonTags = `
+(function_definition) @name.definition.function
+
+(class_definition) @name.definition.class
+`
+
+// queryForGrammar returns the tags.scm query string for the given grammar
+// name. Returns "" for grammars not yet wired (others pending).
+func queryForGrammar(name string) string {
+	switch name {
+	case "php":
+		return phpTags
+	case "typescript", "tsx":
+		return typescriptTags
+	case "python":
+		return pythonTags
+	}
+	return ""
+}
+
+// scanCaptures translates treesitter captures to Symbols. Inlined from
+// queries.ScanCaptures to avoid an import cycle (symbols → queries → symbols).
+func scanCaptures(captures []treesitter.Capture, src []byte, path string) []Symbol {
+	out := make([]Symbol, 0, len(captures))
+	for _, c := range captures {
+		if c.StartByte >= c.EndByte || int(c.EndByte) > len(src) {
+			continue
+		}
+		name := string(src[c.StartByte:c.EndByte])
+		var kind SymbolKind
+		switch {
+		case strings.HasPrefix(c.Name, "name.definition."):
+			kind = SymDef
+		case c.Name == "name.reference.call":
+			kind = SymCall
+		case c.Name == "name.reference.import" || c.Name == "module":
+			kind = SymImport
+		case c.Name == "name.reference.type":
+			kind = SymTypeRef
+		default:
+			continue
+		}
+		line := lineAt(src, c.StartByte)
+		out = append(out, Symbol{Name: name, Kind: kind, File: path, Line: line})
+	}
+	return out
+}
+
+// lineAt counts newlines in src up to byteOff to compute a 1-based line number.
+func lineAt(src []byte, byteOff uint32) int {
+	if int(byteOff) > len(src) {
+		byteOff = uint32(len(src))
+	}
+	line := 1
+	for i := uint32(0); i < byteOff; i++ {
+		if src[i] == '\n' {
+			line++
+		}
+	}
+	return line
 }
