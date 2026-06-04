@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 )
 
 func TestWriteJSON_AtomicAndReadable(t *testing.T) {
@@ -86,4 +87,33 @@ func TestLoadJSON_NotExist(t *testing.T) {
 	if !os.IsNotExist(err) {
 		t.Fatalf("expected os.IsNotExist, got %v", err)
 	}
+}
+
+func TestLock_AcquireAndRelease(t *testing.T) {
+	dir := t.TempDir()
+	lockPath := filepath.Join(dir, ".lock")
+
+	// First acquire should succeed.
+	lock1, err := AcquireLock(lockPath, 100*time.Millisecond)
+	if err != nil {
+		t.Fatalf("first AcquireLock: %v", err)
+	}
+
+	// Second acquire while first held should time out.
+	_, err = AcquireLock(lockPath, 50*time.Millisecond)
+	if err == nil {
+		t.Fatalf("second AcquireLock should fail while first held")
+	}
+
+	// Release first.
+	if err := lock1.Release(); err != nil {
+		t.Fatalf("Release: %v", err)
+	}
+
+	// Now third acquire should succeed.
+	lock3, err := AcquireLock(lockPath, 100*time.Millisecond)
+	if err != nil {
+		t.Fatalf("third AcquireLock: %v", err)
+	}
+	lock3.Release()
 }

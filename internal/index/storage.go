@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"time"
 )
 
 // ErrSchemaVersionMismatch is returned by LoadJSON when the persisted
@@ -73,4 +74,54 @@ func LoadJSON(path string) (*Index, error) {
 	}
 	idx.RebuildLookups()
 	return &idx, nil
+}
+
+// Lock represents a held file lock; release via Release().
+type Lock struct {
+	path string
+	file *os.File
+}
+
+// AcquireLock tries to acquire an exclusive lock on path. Creates the file
+// with O_EXCL — if the file exists, retry until timeout. Times out after
+// timeout duration, returning a timeout error.
+//
+// Note: this is best-effort cross-process exclusion via lockfile-creation
+// pattern. POSIX flock would be more robust but requires syscall.Flock
+// which works on Unix only. Lockfile is cross-platform.
+func AcquireLock(path string, timeout time.Duration) (*Lock, error) {
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		return nil, fmt.Errorf("mkdir lock dir: %w", err)
+	}
+	deadline := time.Now().Add(timeout)
+	for {
+		f, err := os.OpenFile(path, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
+		if err == nil {
+			return &Lock{path: path, file: f}, nil
+		}
+		if !os.IsExist(err) {
+			return nil, fmt.Errorf("create lock: %w", err)
+		}
+		if time.Now().After(deadline) {
+			return nil, fmt.Errorf("lock timeout (held by another process? path=%s)", path)
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+}
+
+// Release closes the lock file and removes it. Idempotent — safe to call
+// twice or via defer even on AcquireLock failure (nil receiver).
+func (l *Lock) Release() error {
+	if l == nil {
+		return nil
+	}
+	if l.file != nil {
+		_ = l.file.Close()
+		l.file = nil
+	}
+	if l.path != "" {
+		_ = os.Remove(l.path)
+		l.path = ""
+	}
+	return nil
 }

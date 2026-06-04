@@ -48,6 +48,13 @@ func BuildFull(ws string) (*Index, error) {
 // healthy, otherwise builds full. Applies mtime-driven incremental update
 // if the loaded index is <StaleThreshold old. Persists changes.
 func LoadOrBuild(stateDir, ws string) (*Index, error) {
+	lockPath := filepath.Join(stateDir, "index", ".lock")
+	lock, lockErr := AcquireLock(lockPath, 10*time.Second)
+	if lockErr != nil {
+		return nil, fmt.Errorf("acquire lock: %w", lockErr)
+	}
+	defer lock.Release()
+
 	idxPath := filepath.Join(stateDir, "index", IndexFileName)
 
 	idx, err := LoadJSON(idxPath)
