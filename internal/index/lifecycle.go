@@ -9,9 +9,10 @@ import (
 )
 
 // StaleThreshold is the age above which a loaded index is forced to full
-// rescan. Catches branch-switch and external-edit scenarios without
-// fs-watch.
-const StaleThreshold = 1 * time.Hour
+// rescan. 24h is the upper bound between branch-switch / external-edit
+// scenarios that mtime incremental can't catch; mtime path catches all
+// in-process edits, so 24h is conservative.
+const StaleThreshold = 24 * time.Hour
 
 // IndexFileName is the on-disk index filename (under stateDir/index/).
 const IndexFileName = "index.json"

@@ -3,9 +3,12 @@ package runner
 import (
 	"context"
 	"fmt"
+	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/thanhhaudev/kizunax-plugin-cc/internal/bundlelog"
@@ -105,8 +108,10 @@ func Run(ctx context.Context, pluginRoot string, p provider.Provider, bundle dif
 				} else if opts.Verbose {
 					fmt.Fprintf(os.Stderr, "[verbose] resolver v2 failed, falling back to v1: %v\n", v2Err)
 				}
-			} else if idxErr != nil && opts.Verbose {
-				fmt.Fprintf(os.Stderr, "[verbose] index unavailable, falling back to v1: %v\n", idxErr)
+			} else if idxErr != nil {
+				if opts.Verbose {
+					fmt.Fprintf(os.Stderr, "[verbose] index unavailable for this review (%v); using v1. Background build kicked — next review uses v2.\n", idxErr)
+				}
 			}
 		}
 		if !usedV2 {
@@ -313,8 +318,14 @@ func useIndexResolver(ws state.WorkspaceDir) bool {
 	return false
 }
 
-// loadIndexForReview wraps index.LoadOrBuild. Review never fails due to
-// index issues — caller falls back to v1 resolver on error.
+// loadIndexForReview returns a usable index WITHOUT blocking on cold build.
+// Path semantics:
+//   - force=true: synchronous full rebuild (--rescan or `kizunax index sync`
+//     calls); user explicitly asked.
+//   - force=false: try fast read only. If index exists and is fresh, return.
+//     Otherwise return nil + (best-effort) kick a detached background
+//     subprocess to populate the index, so the NEXT review can use v2.
+//     The current review falls back to v1 transparently — additive design.
 func loadIndexForReview(ws state.WorkspaceDir, workspaceRoot string, force bool) (*index.Index, error) {
 	if ws.Root == "" || workspaceRoot == "" {
 		return nil, fmt.Errorf("empty workspace dir or root")
@@ -322,8 +333,38 @@ func loadIndexForReview(ws state.WorkspaceDir, workspaceRoot string, force bool)
 	if force {
 		idxPath := filepath.Join(ws.Root, "index", "index.json")
 		_ = os.Remove(idxPath)
+		return index.LoadOrBuild(ws.Root, workspaceRoot)
 	}
-	return index.LoadOrBuild(ws.Root, workspaceRoot)
+	idxPath := filepath.Join(ws.Root, "index", "index.json")
+	idx, err := index.LoadJSON(idxPath)
+	if err == nil {
+		age := time.Since(time.Unix(0, idx.Built))
+		if age < index.StaleThreshold {
+			return idx, nil
+		}
+	}
+	// No usable index. Kick a detached subprocess to populate it for the
+	// next review; return nil so the current review falls back to v1.
+	go spawnBackgroundIndexSync()
+	return nil, fmt.Errorf("index not available; background sync started")
+}
+
+// spawnBackgroundIndexSync exec's `kizunax index sync` detached. The
+// subprocess survives the parent runner.Run exiting (Setpgid only — NOT
+// Setsid, which fails under the Claude Code sandbox on macOS per
+// CLAUDE.md). All output suppressed. Best-effort: any error is swallowed
+// because the current review already has its v1 fallback running.
+func spawnBackgroundIndexSync() {
+	exe, err := os.Executable()
+	if err != nil {
+		return
+	}
+	cmd := exec.Command(exe, "index", "sync")
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	cmd.Stdout = io.Discard
+	cmd.Stderr = io.Discard
+	cmd.Stdin = nil
+	_ = cmd.Start() // intentional: parent must not wait on this
 }
 
 // assembleBundleLogEntry builds the per-review bundlelog.Entry from current

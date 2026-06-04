@@ -88,16 +88,16 @@ func TestLoadOrBuild_IncrementalUpdate(t *testing.T) {
 	}
 }
 
-func TestLoadOrBuild_AutoStaleAfter1Hour(t *testing.T) {
+func TestLoadOrBuild_AutoStaleAfter24Hours(t *testing.T) {
 	ws := t.TempDir()
 	stateDir := t.TempDir()
 	os.WriteFile(filepath.Join(ws, "x.go"), []byte("package x"), 0o644)
 
-	// Manually write an index with Built timestamp >1h old.
+	// Manually write an index with Built timestamp >24h old.
 	idx := &Index{
 		Version: CurrentSchemaVersion,
 		Root:    ws,
-		Built:   time.Now().Add(-2 * time.Hour).UnixNano(),
+		Built:   time.Now().Add(-26 * time.Hour).UnixNano(),
 		Files: map[string]*FileIndex{
 			"old.go": {Path: "old.go", Lang: "go", Mtime: 1},
 		},
@@ -108,7 +108,7 @@ func TestLoadOrBuild_AutoStaleAfter1Hour(t *testing.T) {
 		t.Fatalf("seed: %v", err)
 	}
 
-	// LoadOrBuild must do full rescan because Built >1h old.
+	// LoadOrBuild must do full rescan because Built >24h old.
 	got, err := LoadOrBuild(stateDir, ws)
 	if err != nil {
 		t.Fatalf("LoadOrBuild: %v", err)

@@ -17,6 +17,7 @@ import (
 	"github.com/thanhhaudev/kizunax-plugin-cc/internal/prompt"
 	"github.com/thanhhaudev/kizunax-plugin-cc/internal/provider"
 	"github.com/thanhhaudev/kizunax-plugin-cc/internal/schema"
+	"github.com/thanhhaudev/kizunax-plugin-cc/internal/state"
 )
 
 // mockProvider returns canned responses in order.
@@ -426,6 +427,19 @@ func TestRun_EnrichesBundleWithReferencedFiles(t *testing.T) {
 	reqUser := p.requests[0].Messages[0].Content
 	if !strings.Contains(reqUser, "authz/checker.go") {
 		t.Fatalf("expected referenced file in prompt; got:\n%s", reqUser)
+	}
+}
+
+// TestLoadIndexForReview_EmptyWorkspaceReturnsNil verifies that
+// loadIndexForReview returns nil+error immediately when workspace dir or root
+// is empty — the guard at the top of the function. No subprocess is spawned.
+func TestLoadIndexForReview_EmptyWorkspaceReturnsNil(t *testing.T) {
+	idx, err := loadIndexForReview(state.WorkspaceDir{}, "", false)
+	if idx != nil {
+		t.Fatalf("expected nil index when workspace is empty, got %+v", idx)
+	}
+	if err == nil {
+		t.Fatal("expected error when workspace is empty")
 	}
 }
 
