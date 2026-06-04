@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/thanhhaudev/kizunax-plugin-cc/internal/diff"
+	"github.com/thanhhaudev/kizunax-plugin-cc/pkg/diff"
 	"github.com/thanhhaudev/kizunax-plugin-cc/pkg/git"
 	"github.com/thanhhaudev/kizunax-plugin-cc/internal/job"
 	"github.com/thanhhaudev/kizunax-plugin-cc/internal/prompt"

@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/thanhhaudev/kizunax-plugin-cc/internal/diff"
+	"github.com/thanhhaudev/kizunax-plugin-cc/pkg/diff"
 	xerrors "github.com/thanhhaudev/kizunax-plugin-cc/pkg/errors"
 	"github.com/thanhhaudev/kizunax-plugin-cc/internal/job"
 	"github.com/thanhhaudev/kizunax-plugin-cc/internal/prompt"

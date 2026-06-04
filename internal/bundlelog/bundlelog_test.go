@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/thanhhaudev/kizunax-plugin-cc/internal/diff"
+	"github.com/thanhhaudev/kizunax-plugin-cc/pkg/diff"
 	"github.com/thanhhaudev/kizunax-plugin-cc/internal/state"
 )
 

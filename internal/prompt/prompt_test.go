@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/thanhhaudev/kizunax-plugin-cc/internal/diff"
+	"github.com/thanhhaudev/kizunax-plugin-cc/pkg/diff"
 )
 
 func TestBuild_GlossaryPrepended_WhenNonEmpty(t *testing.T) {

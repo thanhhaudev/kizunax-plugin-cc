@@ -4,7 +4,7 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/thanhhaudev/kizunax-plugin-cc/internal/diff"
+	"github.com/thanhhaudev/kizunax-plugin-cc/pkg/diff"
 )
 
 // hunkHeaderRe matches "+++ b/path" lines in unified diff output.

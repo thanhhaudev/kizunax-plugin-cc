@@ -7,7 +7,7 @@ import (
 	"time"
 
 	"github.com/thanhhaudev/kizunax-plugin-cc/internal/config"
-	"github.com/thanhhaudev/kizunax-plugin-cc/internal/diff"
+	"github.com/thanhhaudev/kizunax-plugin-cc/pkg/diff"
 	xerrors "github.com/thanhhaudev/kizunax-plugin-cc/pkg/errors"
 	"github.com/thanhhaudev/kizunax-plugin-cc/pkg/git"
 	"github.com/thanhhaudev/kizunax-plugin-cc/pkg/glossary"

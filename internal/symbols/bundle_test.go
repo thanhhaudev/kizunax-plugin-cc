@@ -3,7 +3,7 @@ package symbols
 import (
 	"testing"
 
-	"github.com/thanhhaudev/kizunax-plugin-cc/internal/diff"
+	"github.com/thanhhaudev/kizunax-plugin-cc/pkg/diff"
 )
 
 func TestExtractFromBundle_GoDiff(t *testing.T) {
