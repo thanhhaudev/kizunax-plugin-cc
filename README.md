@@ -26,9 +26,9 @@ Claude Code  ──/kizunax:review──▶  plugins/kizunax/bin/kizunax
 
 Engine details live in
 [llmreviewkit](https://github.com/thanhhaudev/llmreviewkit). The plugin
-adds: slash commands, multi-provider config with a shared key pool,
-background jobs, hooks (`SessionStart` / `SessionEnd` cleanup + optional
-`Stop` review-gate), and a setup wizard.
+adds: slash commands, config with OpenAI- and Anthropic-compatible
+slots and a shared key pool, background jobs, hooks (`SessionStart` /
+`SessionEnd` cleanup + optional `Stop` review-gate), and a setup wizard.
 
 ## Compared to codex-plugin-cc
 
