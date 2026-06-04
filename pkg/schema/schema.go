@@ -80,9 +80,19 @@ func Parse(raw string) (ReviewResult, error) {
 	return r, nil
 }
 
-// LoadSchemaJSON reads review-output.schema.json from the plugin's schemas/ dir
-// and returns its raw JSON text (used to inline into the prompt).
+// LoadSchemaJSON returns the review-output JSON schema as raw text.
+// When pluginRoot is non-empty, reads from <pluginRoot>/schemas/
+// review-output.schema.json (lets the kizunax CLI ship its own schema
+// alongside templates). When pluginRoot is "", falls back to the
+// embedded default — library consumers without a plugin layout get a
+// usable schema out of the box.
 func LoadSchemaJSON(pluginRoot string) (string, error) {
+	if pluginRoot == "" {
+		if got, ok := embeddedSchemaJSON(); ok {
+			return got, nil
+		}
+		return "", fmt.Errorf("embedded schema unavailable")
+	}
 	path := filepath.Join(pluginRoot, "schemas", "review-output.schema.json")
 	data, err := os.ReadFile(path)
 	if err != nil {

@@ -40,7 +40,7 @@ func TestEngine_BasicReview(t *testing.T) {
 	cfg := engine.Config{
 		Provider:      prov,
 		WorkspaceRoot: t.TempDir(),
-		PromptRoot:    pluginRoot,
+
 	}
 	eng, err := engine.New(cfg)
 	if err != nil {
@@ -79,7 +79,7 @@ func TestEngine_EnrichmentDisabledByEmptyBundle(t *testing.T) {
 	cfg := engine.Config{
 		Provider:      prov,
 		WorkspaceRoot: t.TempDir(),
-		PromptRoot:    pluginRoot,
+
 	}
 	eng, _ := engine.New(cfg)
 	res, err := eng.Review(context.Background(), diff.Bundle{}, engine.ReviewOptions{Mode: prompt.ModeStandard})
@@ -107,7 +107,7 @@ func TestEngine_SyncIndex(t *testing.T) {
 		Provider:      prov,
 		WorkspaceRoot: ws,
 		StateDir:      stateDir,
-		PromptRoot:    pluginRoot,
+
 		UseIndex:      true,
 	}
 	eng, err := engine.New(cfg)
@@ -136,7 +136,7 @@ func TestEngine_BundleLogSink(t *testing.T) {
 	cfg := engine.Config{
 		Provider:      prov,
 		WorkspaceRoot: ws,
-		PromptRoot:    pluginRoot,
+
 		BundleLogSink: &buf,
 	}
 	eng, _ := engine.New(cfg)

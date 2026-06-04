@@ -165,3 +165,23 @@ func TestParse_TLDR_IgnoresLLMField(t *testing.T) {
 		t.Fatalf("LLM must not populate TLDR; got %q", r.TLDR)
 	}
 }
+
+func TestLoadSchemaJSON_EmbeddedFallback(t *testing.T) {
+	s, err := LoadSchemaJSON("")
+	if err != nil {
+		t.Fatalf("LoadSchemaJSON(\"\") should use embedded: %v", err)
+	}
+	if s == "" {
+		t.Fatal("expected non-empty schema string")
+	}
+	if !strings.Contains(s, `"verdict"`) {
+		t.Fatalf("schema doesn't look like our review schema: %q", s[:min(200, len(s))])
+	}
+}
+
+func min(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
+}
