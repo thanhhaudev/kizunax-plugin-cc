@@ -16,6 +16,23 @@ SETTINGS_PREEXISTED=0
 JSON_TOOL=""
 PLATFORM=""
 VERSION=""
+RUN_SETUP=1
+
+for arg in "$@"; do
+  case "$arg" in
+    --no-setup) RUN_SETUP=0 ;;
+    -h|--help)
+      echo "Usage: $0 [--no-setup]"
+      echo "  --no-setup  Skip the post-install setup wizard prompt."
+      exit 0
+      ;;
+    *)
+      echo "Unknown argument: $arg" >&2
+      echo "Usage: $0 [--no-setup]" >&2
+      exit 2
+      ;;
+  esac
+done
 
 err()  { echo "ERROR: $*" >&2; }
 info() { echo "==> $*"; }
