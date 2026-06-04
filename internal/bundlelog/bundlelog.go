@@ -6,9 +6,13 @@
 package bundlelog
 
 import (
+	"encoding/json"
+	"fmt"
 	"os"
+	"path/filepath"
 
 	"github.com/thanhhaudev/kizunax-plugin-cc/internal/diff"
+	"github.com/thanhhaudev/kizunax-plugin-cc/internal/state"
 )
 
 const (
@@ -49,4 +53,53 @@ func Enabled() bool {
 		return true
 	}
 	return false
+}
+
+// Append writes one jsonl record. All errors are swallowed — logging must
+// never fail a review. If KIZUNAX_DEBUG=1 is also set, write errors are
+// echoed to stderr (knob for diagnosing why the log file isn't growing).
+//
+// Concurrency: multiple processes may Append to the same file. We open with
+// O_APPEND and write the full marshaled entry + "\n" as a single syscall.
+// POSIX guarantees atomic append for writes ≤4 KiB. Typical entries are
+// ~500-2000 bytes.
+//
+// Rotation: before writing, if the log file is ≥10 MiB, rename it to
+// bundle-log.1.jsonl (overwrite existing backup). Rotation race is accepted:
+// worst case one backup is lost. This is a measurement tool, not an audit log.
+func Append(ws state.WorkspaceDir, entry Entry) {
+	if ws.Root == "" {
+		return
+	}
+	path := filepath.Join(ws.Root, LogName)
+	backup := filepath.Join(ws.Root, BackupName)
+
+	// Rotate if oversized. Errors here are silent — fall through to write,
+	// which will either succeed or also swallow.
+	if info, err := os.Stat(path); err == nil && info.Size() >= SizeCapBytes {
+		_ = os.Rename(path, backup)
+	}
+
+	line, err := json.Marshal(entry)
+	if err != nil {
+		debugLog("marshal: %v", err)
+		return
+	}
+	line = append(line, '\n')
+
+	f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600)
+	if err != nil {
+		debugLog("open %s: %v", path, err)
+		return
+	}
+	defer f.Close()
+	if _, err := f.Write(line); err != nil {
+		debugLog("write: %v", err)
+	}
+}
+
+func debugLog(format string, args ...interface{}) {
+	if os.Getenv("KIZUNAX_DEBUG") == "1" {
+		fmt.Fprintf(os.Stderr, "[debug] bundlelog: "+format+"\n", args...)
+	}
 }
