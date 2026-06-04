@@ -54,3 +54,35 @@ func TestSplitDottedPath(t *testing.T) {
 		}
 	}
 }
+
+func TestPythonDecoratorReceiver(t *testing.T) {
+	cases := []struct {
+		in   string
+		want string
+	}{
+		// @app.route("/login")  → receiver "app.route"
+		{`@app.route("/login")`, "app.route"},
+		// @router.get("/users") → receiver "router.get"
+		{`@router.get("/users")`, "router.get"},
+		// @a.b.c(arg)           → receiver "a.b.c"
+		{`@a.b.c(arg)`, "a.b.c"},
+		// Bare decorator (no call) → no receiver to extract
+		{`@staticmethod`, ""},
+		{`@property`, ""},
+		// Decorator that is a plain call (not attribute) → empty (the bare
+		// identifier "deco" is already captured by the existing callID branch)
+		{`@deco()`, ""},
+		// Edge: whitespace inside parens shouldn't matter
+		{`@app.route( "/x" )`, "app.route"},
+		// Edge: multi-line decorator
+		{"@app.route(\n  \"/x\",\n)", "app.route"},
+		// Empty input
+		{"", ""},
+	}
+	for _, c := range cases {
+		got := pythonDecoratorReceiver(c.in)
+		if got != c.want {
+			t.Errorf("pythonDecoratorReceiver(%q) = %q; want %q", c.in, got, c.want)
+		}
+	}
+}

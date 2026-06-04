@@ -362,6 +362,43 @@ func splitDottedPath(s string) (name, pkg string) {
 	return s[dot+1:], s[:dot]
 }
 
+// pythonDecoratorReceiver extracts the receiver path of a Python decorator
+// that is an attribute call. Returns "" when the decorator is bare
+// (@staticmethod) or a plain identifier call (@deco()) — both cases are
+// already covered by other emission paths in extractPythonViaWalk, so this
+// helper is the dedicated attribute-call extraction step.
+//
+// Examples:
+//
+//	"@app.route(\"/login\")" → "app.route"
+//	"@a.b.c(arg)"            → "a.b.c"
+//	"@staticmethod"          → ""    (bare decorator)
+//	"@deco()"                → ""    (plain call, not attribute)
+//
+// Used by extractPythonViaWalk for decorator method-qualifier capture.
+func pythonDecoratorReceiver(decoratorText string) string {
+	s := strings.TrimSpace(decoratorText)
+	if !strings.HasPrefix(s, "@") {
+		return ""
+	}
+	s = s[1:] // drop leading '@'
+
+	// Locate the opening paren of the call. If none, the decorator is
+	// bare (e.g. @staticmethod, @property) — no receiver to extract.
+	paren := strings.IndexByte(s, '(')
+	if paren < 0 {
+		return ""
+	}
+	head := strings.TrimSpace(s[:paren])
+
+	// The receiver must be an attribute path (contains '.') — a plain
+	// identifier call like @deco() has no method-qualifier to surface.
+	if !strings.Contains(head, ".") {
+		return ""
+	}
+	return head
+}
+
 // extractPHPViaWalk extracts PHP symbols using tree cursor traversal. See
 // extractPythonViaWalk for the rationale (ts_query_new traps OOB on the
 // PHP 0.24.2 grammar).
