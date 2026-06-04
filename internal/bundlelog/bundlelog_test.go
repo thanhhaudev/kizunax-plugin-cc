@@ -97,3 +97,42 @@ func TestAppend_EmptyWorkspaceRootSkips(t *testing.T) {
 	// Nothing to assert beyond "did not panic and did not write anywhere
 	// meaningful". This test is here to lock in the guard.
 }
+
+func TestAppend_RotatesAtSizeCap(t *testing.T) {
+	ws := state.WorkspaceDir{Root: t.TempDir()}
+	path := filepath.Join(ws.Root, LogName)
+	backup := filepath.Join(ws.Root, BackupName)
+
+	// Pre-fill log file to >= SizeCapBytes with a single big line so the
+	// next Append() triggers rotation.
+	big := make([]byte, SizeCapBytes+1)
+	for i := range big {
+		big[i] = 'x'
+	}
+	if err := os.WriteFile(path, big, 0o600); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+
+	Append(ws, Entry{Timestamp: "2026-06-04T10:00:00Z", Workspace: "rotate-test"})
+
+	// Backup must now exist with the old big content.
+	bData, err := os.ReadFile(backup)
+	if err != nil {
+		t.Fatalf("backup missing: %v", err)
+	}
+	if len(bData) != SizeCapBytes+1 {
+		t.Fatalf("backup size: want %d, got %d", SizeCapBytes+1, len(bData))
+	}
+
+	// New log must have the new entry only.
+	nData, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("new log missing: %v", err)
+	}
+	if !strings.Contains(string(nData), "rotate-test") {
+		t.Fatalf("new log missing rotate-test entry: %q", string(nData))
+	}
+	if len(nData) > 1024 {
+		t.Fatalf("new log too big — rotation did not truncate (got %d bytes)", len(nData))
+	}
+}
