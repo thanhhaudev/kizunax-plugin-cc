@@ -97,3 +97,52 @@ func mapSymbolKind(k symbols.SymbolKind) Kind {
 	}
 	return SymCall
 }
+
+// skipDirs are directories that are never scanned. Mirrors resolver's
+// shouldSkipDir + adds common per-language vendor dirs.
+var skipDirs = map[string]bool{
+	".git":         true,
+	".hg":          true,
+	".svn":         true,
+	"node_modules": true,
+	"vendor":       true,
+	".venv":        true,
+	"venv":         true,
+	"__pycache__":  true,
+	"dist":         true,
+	"build":        true,
+	"target":       true,
+	".idea":        true,
+	".vscode":      true,
+}
+
+// WalkWorkspace returns repo-relative paths of all files in ws that match
+// a supported language (LangForPath != ""). Walks once, skipping
+// well-known vendor/build directories. Lexical (filepath.WalkDir) order.
+func WalkWorkspace(ws string) ([]string, error) {
+	var out []string
+	err := filepath.WalkDir(ws, func(path string, d os.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return nil // best-effort, skip unreadable
+		}
+		if d.IsDir() {
+			if skipDirs[d.Name()] && path != ws {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		rel, err := filepath.Rel(ws, path)
+		if err != nil {
+			return nil
+		}
+		if LangForPath(rel) == "" {
+			return nil
+		}
+		out = append(out, rel)
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}

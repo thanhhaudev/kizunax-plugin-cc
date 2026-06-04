@@ -72,6 +72,47 @@ func TestScanFile_MissingFile(t *testing.T) {
 	}
 }
 
+func TestWalkWorkspace_FindsSupportedFiles(t *testing.T) {
+	dir := t.TempDir()
+	files := map[string]string{
+		"main.go":              "package main",
+		"sub/util.go":          "package sub",
+		"sub/util_test.go":     "package sub",
+		"scripts/build.sh":     "#!/bin/bash",     // not indexed
+		"node_modules/foo.js":  "x",               // skipped dir
+		".git/HEAD":            "ref: ...",        // skipped dir
+		"vendor/lib/x.go":      "package lib",     // skipped dir
+		"app/auth.py":          "def Foo(): pass",
+		"src/User.php":         "<?php class User {}",
+		"web/component.tsx":    "export const X = 1;",
+	}
+	for rel, content := range files {
+		full := filepath.Join(dir, rel)
+		os.MkdirAll(filepath.Dir(full), 0o755)
+		os.WriteFile(full, []byte(content), 0o644)
+	}
+
+	paths, err := WalkWorkspace(dir)
+	if err != nil {
+		t.Fatalf("WalkWorkspace: %v", err)
+	}
+
+	// Expected: main.go, sub/util.go, sub/util_test.go, app/auth.py, src/User.php, web/component.tsx
+	wantPresent := []string{"main.go", "sub/util.go", "sub/util_test.go", "app/auth.py", "src/User.php", "web/component.tsx"}
+	for _, p := range wantPresent {
+		if !contains(paths, p) {
+			t.Errorf("WalkWorkspace missing %s; got %v", p, paths)
+		}
+	}
+
+	// Expected absent
+	for _, p := range []string{"scripts/build.sh", "node_modules/foo.js", ".git/HEAD", "vendor/lib/x.go"} {
+		if contains(paths, p) {
+			t.Errorf("WalkWorkspace should skip %s; got %v", p, paths)
+		}
+	}
+}
+
 // Test helpers
 func names(locs []Location) []string {
 	out := make([]string, len(locs))
