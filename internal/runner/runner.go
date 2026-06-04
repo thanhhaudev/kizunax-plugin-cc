@@ -98,9 +98,10 @@ func Run(ctx context.Context, pluginRoot string, p provider.Provider, bundle dif
 				fmt.Fprintf(os.Stderr, "[warn] %s\n", w)
 			}
 		}
-		// Bundle log wiring lands in Task 10.
-		_ = attachRes
-		_ = diffPaths
+		// TODO(v0.12.4 Task 10): replace with bundlelog.Append(opts.WorkspaceDir,
+		// assembleBundleLogEntry(bundle, diffPaths, attachRes, stats, opts.WorkspaceDir))
+		// when bundlelog.Enabled(). diffPaths + attachRes + stats are all already
+		// in scope from above.
 	}
 
 	pr, err := prompt.Build(pluginRoot, opts.Mode, bundle, schemaJSON, opts.Focus, opts.Glossary)
