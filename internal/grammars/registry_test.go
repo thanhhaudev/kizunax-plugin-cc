@@ -24,9 +24,9 @@ func TestRegistry_HasCoreLanguages(t *testing.T) {
 }
 
 func TestEntry_CDNUrl(t *testing.T) {
-	e := Entry{NpmPackage: "tree-sitter-php", Version: "0.24.2", WasmFile: "tree-sitter-php.wasm"}
+	e := Entry{NpmPackage: "tree-sitter-php", Version: "0.23.10", WasmFile: "tree-sitter-php.wasm"}
 	got := e.CDNUrl()
-	want := "https://unpkg.com/tree-sitter-php@0.24.2/tree-sitter-php.wasm"
+	want := "https://unpkg.com/tree-sitter-php@0.23.10/tree-sitter-php.wasm"
 	if got != want {
 		t.Errorf("CDNUrl: got %q, want %q", got, want)
 	}
