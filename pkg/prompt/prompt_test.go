@@ -117,3 +117,44 @@ func TestBuild_ReferencedFilesOmittedWhenEmpty(t *testing.T) {
 		t.Fatalf("section must be absent when no referenced files")
 	}
 }
+
+func TestBuild_EmbeddedFallbackOnEmptyPluginRoot(t *testing.T) {
+	bundle := diff.Bundle{Diff: "diff --git a/x.go b/x.go\n@@\n+x\n"}
+	p, err := Build("", ModeStandard, bundle, `{"type":"object"}`, "", "")
+	if err != nil {
+		t.Fatalf("Build with empty pluginRoot should use embedded: %v", err)
+	}
+	if p.User == "" {
+		t.Fatalf("User prompt should not be empty")
+	}
+	if !strings.Contains(p.User, "diff --git") {
+		t.Fatalf("expected diff to be interpolated into the prompt")
+	}
+}
+
+func TestBuild_CustomPluginRootOverridesEmbedded(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(dir, "prompts"), 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	// Write a recognisable custom template that still has the required
+	// interpolation tokens so the function doesn't error.
+	custom := "CUSTOM_HEADER\n\nReview target: {{TARGET_LABEL}}\nSchema: {{SCHEMA_INLINE}}\nDiff:\n{{REVIEW_INPUT}}\n{{REFERENCED_FILES}}\n"
+	if err := os.WriteFile(filepath.Join(dir, "prompts", "review.md"), []byte(custom), 0o644); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+	p, err := Build(dir, ModeStandard, diff.Bundle{Diff: "marker-diff"}, "{}", "", "")
+	if err != nil {
+		t.Fatalf("Build with custom pluginRoot: %v", err)
+	}
+	if !strings.Contains(p.User, "CUSTOM_HEADER") {
+		maxLen := len(p.User)
+		if maxLen > 200 {
+			maxLen = 200
+		}
+		t.Fatalf("expected custom template content; got %q", p.User[:maxLen])
+	}
+	if !strings.Contains(p.User, "marker-diff") {
+		t.Fatalf("expected diff interpolation in custom template")
+	}
+}

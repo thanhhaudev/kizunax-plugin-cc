@@ -47,14 +47,26 @@ const glossarySectionTemplate = "## Project glossary\n\n%s\n\n---\n\n%s"
 // Build assembles the user prompt by interpolating the chosen template
 // with target label, schema, diff bundle, optional focus text, and optional glossary.
 // When glossary is non-empty it is prepended to the system prompt.
+// When pluginRoot is empty, the bundled embedded templates are used as defaults.
 func Build(pluginRoot string, mode Mode, bundle diff.Bundle, schemaJSON, focus, glossary string) (Prompt, error) {
-	tmplPath := filepath.Join(pluginRoot, "prompts", mode.TemplateFile())
-	raw, err := os.ReadFile(tmplPath)
-	if err != nil {
-		return Prompt{}, xerrors.Internal("load_template", fmt.Sprintf("cannot read %s", tmplPath), err)
+	var rawTmpl string
+	if pluginRoot == "" {
+		// Library consumer didn't supply templates — use embedded defaults.
+		got, ok := embeddedTemplate(mode)
+		if !ok {
+			return Prompt{}, xerrors.Internal("load_template", fmt.Sprintf("no embedded template for mode %q", mode), nil)
+		}
+		rawTmpl = got
+	} else {
+		tmplPath := filepath.Join(pluginRoot, "prompts", mode.TemplateFile())
+		data, err := os.ReadFile(tmplPath)
+		if err != nil {
+			return Prompt{}, xerrors.Internal("load_template", fmt.Sprintf("cannot read %s", tmplPath), err)
+		}
+		rawTmpl = string(data)
 	}
 
-	user := interpolate(string(raw), map[string]string{
+	user := interpolate(rawTmpl, map[string]string{
 		"TARGET_LABEL":     bundle.TargetLabel,
 		"SCHEMA_INLINE":    schemaJSON,
 		"REVIEW_INPUT":     diff.RenderForPrompt(bundle),
