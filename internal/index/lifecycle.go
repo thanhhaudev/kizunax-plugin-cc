@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sync"
 	"time"
 )
 
@@ -23,23 +24,48 @@ func BuildFull(ws string) (*Index, error) {
 	if err != nil {
 		return nil, fmt.Errorf("walk: %w", err)
 	}
+
+	// Group by language so workers respect the per-grammar wazero-runtime
+	// invariant: across-language parallelism is safe because each grammar
+	// owns an isolated runtime (see internal/symbols/wasm.go:567).
+	// Within-language remains serial — wazero runtimes are single-threaded.
+	byLang := make(map[string][]string)
+	for _, p := range paths {
+		lang := LangForPath(p)
+		if lang == "" {
+			continue
+		}
+		byLang[lang] = append(byLang[lang], p)
+	}
+
 	idx := &Index{
 		Version: CurrentSchemaVersion,
 		Root:    ws,
 		Built:   time.Now().UnixNano(),
 		Files:   make(map[string]*FileIndex, len(paths)),
 	}
-	for _, p := range paths {
-		fi, err := ScanFile(ws, p)
-		if err != nil {
-			// Best-effort: skip unreadable files but continue.
-			continue
-		}
-		if fi == nil {
-			continue
-		}
-		idx.Files[p] = fi
+
+	var (
+		mu sync.Mutex
+		wg sync.WaitGroup
+	)
+	for _, langPaths := range byLang {
+		wg.Add(1)
+		go func(files []string) {
+			defer wg.Done()
+			for _, p := range files {
+				fi, scanErr := ScanFile(ws, p)
+				if scanErr != nil || fi == nil {
+					continue
+				}
+				mu.Lock()
+				idx.Files[p] = fi
+				mu.Unlock()
+			}
+		}(langPaths)
 	}
+	wg.Wait()
+
 	idx.RebuildLookups()
 	return idx, nil
 }

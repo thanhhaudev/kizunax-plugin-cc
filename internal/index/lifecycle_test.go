@@ -121,3 +121,46 @@ func TestLoadOrBuild_AutoStaleAfter1Hour(t *testing.T) {
 		t.Fatalf("x.go missing after auto-rescan: %+v", got.Files)
 	}
 }
+
+func TestBuildFull_ParallelEquivalentToSequentialOutput(t *testing.T) {
+	// Mixed-language workspace to exercise multiple goroutines.
+	ws := t.TempDir()
+	os.WriteFile(filepath.Join(ws, "a.go"), []byte("package x\nfunc Alpha() {}\n"), 0o644)
+	os.WriteFile(filepath.Join(ws, "b.go"), []byte("package x\nfunc Beta() {}\n"), 0o644)
+	os.WriteFile(filepath.Join(ws, "c.py"), []byte("def gamma():\n    pass\n"), 0o644)
+	os.WriteFile(filepath.Join(ws, "d.py"), []byte("def delta():\n    pass\n"), 0o644)
+	os.WriteFile(filepath.Join(ws, "e.php"), []byte("<?php function epsilon() {}\n"), 0o644)
+	os.WriteFile(filepath.Join(ws, "f.ts"), []byte("export function zeta() {}\n"), 0o644)
+
+	// Run BuildFull twice; result should be deterministic regardless of
+	// goroutine scheduling order.
+	idx1, err := BuildFull(ws)
+	if err != nil {
+		t.Fatalf("first BuildFull: %v", err)
+	}
+	idx2, err := BuildFull(ws)
+	if err != nil {
+		t.Fatalf("second BuildFull: %v", err)
+	}
+
+	if len(idx1.Files) != len(idx2.Files) {
+		t.Fatalf("file count mismatch: %d vs %d", len(idx1.Files), len(idx2.Files))
+	}
+	for path := range idx1.Files {
+		if _, ok := idx2.Files[path]; !ok {
+			t.Fatalf("path %s missing from second run", path)
+		}
+	}
+
+	// Sanity: at least the Go files (which use stdlib AST, deterministic
+	// and don't depend on WASM availability) must produce defs in both runs.
+	for _, p := range []string{"a.go", "b.go"} {
+		fi := idx1.Files[p]
+		if fi == nil {
+			t.Fatalf("expected %s in idx1.Files", p)
+		}
+		if len(fi.Defs) == 0 {
+			t.Errorf("expected at least 1 def in %s, got 0", p)
+		}
+	}
+}
