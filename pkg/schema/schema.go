@@ -81,22 +81,24 @@ func Parse(raw string) (ReviewResult, error) {
 }
 
 // LoadSchemaJSON returns the review-output JSON schema as raw text.
-// When pluginRoot is non-empty, reads from <pluginRoot>/schemas/
-// review-output.schema.json (lets the kizunax CLI ship its own schema
-// alongside templates). When pluginRoot is "", falls back to the
-// embedded default — library consumers without a plugin layout get a
-// usable schema out of the box.
+// Lookup order:
+//  1. <pluginRoot>/schemas/review-output.schema.json (disk override).
+//  2. Embedded default (library consumers without a plugin layout, or
+//     consumers who set PromptRoot to override templates but don't
+//     ship their own schema).
+//
+// Disk read failures (missing file, permission denied) fall through to
+// embedded. Only an unreachable embedded blob returns an error — which
+// in practice can't happen because //go:embed is compile-time.
 func LoadSchemaJSON(pluginRoot string) (string, error) {
-	if pluginRoot == "" {
-		if got, ok := embeddedSchemaJSON(); ok {
-			return got, nil
+	if pluginRoot != "" {
+		path := filepath.Join(pluginRoot, "schemas", "review-output.schema.json")
+		if data, err := os.ReadFile(path); err == nil {
+			return string(data), nil
 		}
-		return "", fmt.Errorf("embedded schema unavailable")
 	}
-	path := filepath.Join(pluginRoot, "schemas", "review-output.schema.json")
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return "", err
+	if got, ok := embeddedSchemaJSON(); ok {
+		return got, nil
 	}
-	return string(data), nil
+	return "", fmt.Errorf("embedded schema unavailable")
 }
