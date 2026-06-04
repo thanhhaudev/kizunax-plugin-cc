@@ -29,8 +29,13 @@ type ReferencedFileLogEntry struct {
 // AttachResult summarizes the outcome of AttachReferenced for the runner's
 // verbose stderr line and bundlelog entry.
 type AttachResult struct {
-	Attached    int
-	Dropped     int
+	Attached int
+	Dropped  int
+	// UsedBytes is the budget-unit accounting (Σ of cost = len(Excerpt)+80 per
+	// kept file, where 80 bytes is the rendered path+fence+symbol-list
+	// overhead). It WILL NOT equal Σ Files[i].Bytes, which counts raw excerpt
+	// bytes only. Use UsedBytes for budget-vs-cap comparisons, Files[i].Bytes
+	// for per-file content size.
 	UsedBytes   int
 	BudgetBytes int
 	Files       []ReferencedFileLogEntry // kept entries only, each with Reason="def_match:..."
