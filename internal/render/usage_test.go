@@ -1,6 +1,7 @@
 package render
 
 import (
+	"flag"
 	"os"
 	"path/filepath"
 	"strings"
@@ -9,6 +10,8 @@ import (
 
 	"github.com/thanhhaudev/kizunax-plugin-cc/internal/usage"
 )
+
+var updateGolden = flag.Bool("update", false, "update golden files")
 
 func TestAbbrevNum(t *testing.T) {
 	cases := []struct {
