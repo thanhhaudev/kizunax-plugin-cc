@@ -220,6 +220,7 @@ func extractPythonViaWalk(ctx context.Context, lang *treesitter.Language, conten
 	attributeID := lang.SymbolIDForName(ctx, "attribute", true)
 	dottedNameID := lang.SymbolIDForName(ctx, "dotted_name", true)
 	aliasID := lang.SymbolIDForName(ctx, "aliased_import", true)
+	decoratorID := lang.SymbolIDForName(ctx, "decorator", true)
 
 	// Field IDs.
 	nameFieldID := lang.FieldIDForName(ctx, "name")
@@ -227,8 +228,8 @@ func extractPythonViaWalk(ctx context.Context, lang *treesitter.Language, conten
 	attributeFieldID := lang.FieldIDForName(ctx, "attribute")
 	moduleNameFieldID := lang.FieldIDForName(ctx, "module_name")
 
-	matchIDs := make([]uint16, 0, 6)
-	for _, id := range []uint16{fnDefID, classDefID, importID, importFromID, callID} {
+	matchIDs := make([]uint16, 0, 7)
+	for _, id := range []uint16{fnDefID, classDefID, importID, importFromID, callID, decoratorID} {
 		if id != 0 {
 			matchIDs = append(matchIDs, id)
 		}
@@ -288,6 +289,30 @@ func extractPythonViaWalk(ctx context.Context, lang *treesitter.Language, conten
 				_ = e
 				_ = attributeFieldID
 			}
+		case decoratorID:
+			// @app.route("/login") → emit "app.route" with split (Name="route", Pkg="app").
+			// Bare decorators like @staticmethod and plain calls like @deco()
+			// are handled by other emission paths (no receiver to surface here).
+			decoratorText := sliceBytes(content, n.StartByte, n.EndByte)
+			receiver := pythonDecoratorReceiver(decoratorText)
+			if receiver == "" {
+				break
+			}
+			name, pkg := splitDottedPath(receiver)
+			if name == "" {
+				break
+			}
+			// Find the offset of the receiver inside the decorator text so the
+			// emitted Line is the decorator line, not the function-definition line.
+			relOff := strings.Index(decoratorText, receiver)
+			byteOff := n.StartByte + uint32(relOff)
+			out = append(out, Symbol{
+				Name: name,
+				Pkg:  pkg,
+				Kind: SymCall,
+				File: path,
+				Line: lineAt(content, byteOff),
+			})
 		}
 	}
 	return out
