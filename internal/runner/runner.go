@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/thanhhaudev/kizunax-plugin-cc/internal/bundlelog"
+	"github.com/thanhhaudev/kizunax-plugin-cc/pkg/bundlelog"
 	"github.com/thanhhaudev/kizunax-plugin-cc/internal/config"
 	"github.com/thanhhaudev/kizunax-plugin-cc/pkg/diff"
 	xerrors "github.com/thanhhaudev/kizunax-plugin-cc/pkg/errors"
