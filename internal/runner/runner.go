@@ -62,6 +62,10 @@ type Options struct {
 	// Verbose toggles stderr stats for pre-flight enrichment (scanner
 	// symbol count, resolver matches, attached files / dropped files).
 	Verbose bool
+
+	// ForceRescan, when true, deletes the on-disk index before running the
+	// index-backed resolver (v0.13). Only meaningful when KIZUNAX_USE_INDEX=1.
+	ForceRescan bool
 }
 
 func Run(ctx context.Context, pluginRoot string, p provider.Provider, bundle diff.Bundle, opts Options) (Result, error) {
@@ -88,7 +92,7 @@ func Run(ctx context.Context, pluginRoot string, p provider.Provider, bundle dif
 			usedV2       bool
 		)
 		if useIndexResolver() {
-			idx, idxErr := loadIndexForReview(opts.WorkspaceDir, opts.WorkspaceRoot)
+			idx, idxErr := loadIndexForReview(opts.WorkspaceDir, opts.WorkspaceRoot, opts.ForceRescan)
 			if idxErr == nil && idx.Healthy() {
 				idxStats, v2Err := resolver.FindReferencesV2(syms, opts.WorkspaceRoot, idx, diffPaths, 5)
 				if v2Err == nil {
@@ -300,9 +304,13 @@ func useIndexResolver() bool {
 
 // loadIndexForReview wraps index.LoadOrBuild. Review never fails due to
 // index issues — caller falls back to v1 resolver on error.
-func loadIndexForReview(ws state.WorkspaceDir, workspaceRoot string) (*index.Index, error) {
+func loadIndexForReview(ws state.WorkspaceDir, workspaceRoot string, force bool) (*index.Index, error) {
 	if ws.Root == "" || workspaceRoot == "" {
 		return nil, fmt.Errorf("empty workspace dir or root")
+	}
+	if force {
+		idxPath := filepath.Join(ws.Root, "index", "index.json")
+		_ = os.Remove(idxPath)
 	}
 	return index.LoadOrBuild(ws.Root, workspaceRoot)
 }

@@ -48,6 +48,7 @@ func runReviewWithMode(args []string, mode prompt.Mode) error {
 	providerOverride := flagValue(args, "--provider")
 	summary := hasFlag(args, "--summary")
 	noSummary := hasFlag(args, "--no-summary")
+	rescan := hasFlag(args, "--rescan")
 	if summary && noSummary {
 		return xerrors.User("conflict_summary_flags",
 			"--summary and --no-summary are mutually exclusive", "")
@@ -143,6 +144,7 @@ func runReviewWithMode(args []string, mode prompt.Mode) error {
 		WorkspaceDir:  wsDir,
 		WorkspaceRoot: cwd,
 		Verbose:       verbose,
+		ForceRescan:   rescan,
 	})
 	end := time.Now()
 	dur := end.Sub(start)
