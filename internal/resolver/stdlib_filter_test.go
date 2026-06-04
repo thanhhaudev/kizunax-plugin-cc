@@ -105,3 +105,48 @@ func TestIsStdlibSymbol_PHP(t *testing.T) {
 		}
 	}
 }
+
+func TestIsStdlibSymbol_Python_BareNameBuiltins(t *testing.T) {
+	builtins := []string{
+		"print", "len", "range", "str", "int", "isinstance",
+		"enumerate", "zip", "super", "type", "any", "all",
+	}
+	for _, name := range builtins {
+		// SymCall with empty Pkg → filtered
+		sym := symbols.Symbol{Name: name, Kind: symbols.SymCall, File: "main.py"}
+		if !IsStdlibSymbol(sym) {
+			t.Errorf("expected bare-name builtin %q (SymCall) to be filtered", name)
+		}
+		// SymDef MUST NOT be filtered (user could shadow `print`)
+		symDef := symbols.Symbol{Name: name, Kind: symbols.SymDef, File: "main.py"}
+		if IsStdlibSymbol(symDef) {
+			t.Errorf("SymDef %q must NOT be filtered (user may shadow builtin)", name)
+		}
+		// SymCall with non-empty Pkg → NOT filtered (user code, distinguishable)
+		symPkg := symbols.Symbol{Name: name, Pkg: "myobj", Kind: symbols.SymCall, File: "main.py"}
+		if IsStdlibSymbol(symPkg) {
+			t.Errorf("attribute call %s.%q must NOT be filtered as builtin", "myobj", name)
+		}
+	}
+}
+
+func TestIsStdlibSymbol_PHP_BareNameBuiltins(t *testing.T) {
+	builtins := []string{
+		"count", "strlen", "array_map", "is_array", "isset",
+		"json_encode", "sprintf", "explode", "trim",
+	}
+	for _, name := range builtins {
+		sym := symbols.Symbol{Name: name, Kind: symbols.SymCall, File: "src/main.php"}
+		if !IsStdlibSymbol(sym) {
+			t.Errorf("expected PHP bare-name builtin %q (SymCall) to be filtered", name)
+		}
+		symDef := symbols.Symbol{Name: name, Kind: symbols.SymDef, File: "src/main.php"}
+		if IsStdlibSymbol(symDef) {
+			t.Errorf("PHP SymDef %q must NOT be filtered", name)
+		}
+		symPkg := symbols.Symbol{Name: name, Pkg: "Whatever", Kind: symbols.SymCall, File: "src/main.php"}
+		if IsStdlibSymbol(symPkg) {
+			t.Errorf("PHP attribute call Whatever::%q must NOT be filtered as builtin", name)
+		}
+	}
+}
