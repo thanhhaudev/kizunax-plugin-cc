@@ -82,8 +82,13 @@ func (idx *Index) RebuildLookups() {
 }
 
 // LookupDefs returns all definition Locations for the given symbol name.
-// If pkg is non-empty, only Locations whose Pkg matches are returned;
-// pkg="" matches any package (bare-name lookup).
+// Pkg filtering is asymmetric on purpose: a Location with Pkg="" carries
+// no package info (e.g. Go AST extractor records definitions without
+// recording the containing package), so it matches ANY caller pkg. We
+// only drop a candidate when BOTH the caller's pkg and the Location's
+// pkg are non-empty AND disagree — this restores v1 regex-grep loose
+// match behavior while still letting fully-qualified calls (caller
+// pkg="store", def pkg="store") prefer same-pkg matches.
 func (idx *Index) LookupDefs(name, pkg string) []Location {
 	if idx.bySymbol == nil {
 		return nil
@@ -93,7 +98,7 @@ func (idx *Index) LookupDefs(name, pkg string) []Location {
 		if loc.Kind != SymDef {
 			continue
 		}
-		if pkg != "" && loc.Pkg != pkg {
+		if pkg != "" && loc.Pkg != "" && loc.Pkg != pkg {
 			continue
 		}
 		out = append(out, loc)
@@ -102,7 +107,8 @@ func (idx *Index) LookupDefs(name, pkg string) []Location {
 }
 
 // LookupRefs returns all non-def Locations (SymCall, SymTypeRef) for the
-// given symbol name. pkg filter same as LookupDefs.
+// given symbol name. Pkg filtering uses the same asymmetric rule as
+// LookupDefs — see that function's comment.
 func (idx *Index) LookupRefs(name, pkg string) []Location {
 	if idx.bySymbol == nil {
 		return nil
@@ -112,7 +118,7 @@ func (idx *Index) LookupRefs(name, pkg string) []Location {
 		if loc.Kind == SymDef || loc.Kind == SymImport {
 			continue
 		}
-		if pkg != "" && loc.Pkg != pkg {
+		if pkg != "" && loc.Pkg != "" && loc.Pkg != pkg {
 			continue
 		}
 		out = append(out, loc)

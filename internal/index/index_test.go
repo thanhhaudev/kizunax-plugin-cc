@@ -76,12 +76,21 @@ func TestIndex_LookupDefs_Basic(t *testing.T) {
 		t.Fatalf("LookupDefs Foo (no pkg): want 2, got %d", len(got))
 	}
 
+	// Asymmetric pkg filter: caller pkg="subpkg" matches BOTH a.go (loc.Pkg
+	// "" — unknown, loose-match wins) AND b.go (loc.Pkg "subpkg" — exact).
+	// This mirrors v1 regex-grep behavior and avoids dropping intra-package
+	// defs that the Go AST extractor records without a pkg label.
 	gotPkg := idx.LookupDefs("Foo", "subpkg")
-	if len(gotPkg) != 1 {
-		t.Fatalf("LookupDefs Foo subpkg: want 1, got %d", len(gotPkg))
+	if len(gotPkg) != 2 {
+		t.Fatalf("LookupDefs Foo subpkg: want 2 (loose + exact), got %d", len(gotPkg))
 	}
-	if gotPkg[0].File != "b.go" {
-		t.Fatalf("LookupDefs Foo subpkg: want b.go, got %s", gotPkg[0].File)
+
+	// Caller pkg="otherpkg" still loose-matches a.go (Pkg="") but NOT b.go
+	// (Pkg="subpkg" disagrees explicitly). Verifies the filter still bites
+	// when both sides carry concrete pkg labels.
+	gotOther := idx.LookupDefs("Foo", "otherpkg")
+	if len(gotOther) != 1 || gotOther[0].File != "a.go" {
+		t.Fatalf("LookupDefs Foo otherpkg: want 1 from a.go, got %+v", gotOther)
 	}
 
 	none := idx.LookupDefs("Missing", "")
