@@ -202,10 +202,10 @@ func newRuntime(ctx context.Context) (*Runtime, error) {
 // The trampolines fail-loud (panic) if invoked before bindRuntimeFns
 // has populated rfns — but this never happens in practice because no
 // grammar can run before the runtime module is up.
-// GetRuntimeForTest exposes the runtime singleton to test code in
-// other packages. Production code should use the package-internal
-// helpers — this exists strictly for testing.
-func GetRuntimeForTest(ctx context.Context) (*Runtime, error) {
+// GetRuntime exposes the runtime singleton to callers in other packages.
+// Used by the symbols package extractors to obtain the shared wazero
+// runtime that hosts loaded grammars.
+func GetRuntime(ctx context.Context) (*Runtime, error) {
 	return getRuntime(ctx)
 }
 
