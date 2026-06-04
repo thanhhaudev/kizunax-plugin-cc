@@ -3,7 +3,7 @@ package cli
 import (
 	"fmt"
 
-	xerrors "github.com/thanhhaudev/kizunax-plugin-cc/pkg/errors"
+	xerrors "github.com/thanhhaudev/llmreviewkit/errors"
 )
 
 const Version = "0.14.0"
