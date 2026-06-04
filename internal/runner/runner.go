@@ -91,7 +91,7 @@ func Run(ctx context.Context, pluginRoot string, p provider.Provider, bundle dif
 			resolverPath = "v1"
 			usedV2       bool
 		)
-		if useIndexResolver() {
+		if useIndexResolver(opts.WorkspaceDir) {
 			idx, idxErr := loadIndexForReview(opts.WorkspaceDir, opts.WorkspaceRoot, opts.ForceRescan)
 			if idxErr == nil && idx.Healthy() {
 				idxStats, v2Err := resolver.FindReferencesV2(syms, opts.WorkspaceRoot, idx, diffPaths, 5)
@@ -294,12 +294,23 @@ func humanBytes(n int) string {
 }
 
 // useIndexResolver returns true if v0.13 index-backed resolver should be
-// tried. Default false in v0.13.0 (opt-in via env). v0.13.2 flips default.
-func useIndexResolver() bool {
+// tried. Precedence: KIZUNAX_DISABLE_INDEX kill switch > KIZUNAX_USE_INDEX
+// env > per-workspace state file > default false.
+// v0.13.0 default is opt-in; v0.13.2 will flip to opt-out.
+func useIndexResolver(ws state.WorkspaceDir) bool {
 	if os.Getenv("KIZUNAX_DISABLE_INDEX") == "1" {
 		return false
 	}
-	return os.Getenv("KIZUNAX_USE_INDEX") == "1"
+	if os.Getenv("KIZUNAX_USE_INDEX") == "1" {
+		return true
+	}
+	// Fallback to persisted per-workspace flag.
+	if ws.Root != "" {
+		if s, err := state.LoadUseIndex(ws); err == nil && s.Enabled {
+			return true
+		}
+	}
+	return false
 }
 
 // loadIndexForReview wraps index.LoadOrBuild. Review never fails due to

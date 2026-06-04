@@ -24,7 +24,7 @@ func runIndexCommand(ctx context.Context, args []string, stdout io.Writer) error
 	_ = ctx
 	if len(args) == 0 {
 		return xerrors.User("index_no_subcmd",
-			"missing subcommand: status | sync | purge | info",
+			"missing subcommand: status | sync | purge | info | enable | disable | toggle",
 			"e.g. kizunax index status")
 	}
 	cwd, err := os.Getwd()
@@ -50,14 +50,30 @@ func runIndexCommand(ctx context.Context, args []string, stdout io.Writer) error
 				"e.g. kizunax index info Authenticate")
 		}
 		return runIndexInfo(ws, args[1], stdout)
+	case "enable":
+		return runIndexEnable(ws, cwd, stdout)
+	case "disable":
+		return runIndexDisable(ws, cwd, stdout)
+	case "toggle":
+		return runIndexToggle(ws, cwd, stdout)
 	default:
 		return xerrors.User("index_unknown",
 			fmt.Sprintf("unknown subcommand: %s", args[0]),
-			"available: status | sync | purge | info")
+			"available: status | sync | purge | info | enable | disable | toggle")
 	}
 }
 
 func runIndexStatus(ws state.WorkspaceDir, root string, stdout io.Writer) error {
+	// Show the current persistent flag state at the top so users can
+	// see whether v2 is enabled even when no index has been built yet.
+	flagState, _ := state.LoadUseIndex(ws)
+	envOverride := os.Getenv("KIZUNAX_USE_INDEX") == "1"
+	envKill := os.Getenv("KIZUNAX_DISABLE_INDEX") == "1"
+	effective := !envKill && (envOverride || flagState.Enabled)
+	fmt.Fprintf(stdout, "Resolver flag:    %s (file=%t, env override=%t, kill switch=%t)\n",
+		boolOnOff(effective), flagState.Enabled, envOverride, envKill)
+	fmt.Fprintln(stdout, "")
+
 	idxPath := filepath.Join(ws.Root, "index", "index.json")
 	info, err := os.Stat(idxPath)
 	if err != nil {
@@ -121,6 +137,42 @@ func runIndexPurge(ws state.WorkspaceDir, stdout io.Writer) error {
 	return nil
 }
 
+func runIndexEnable(ws state.WorkspaceDir, root string, stdout io.Writer) error {
+	s, _ := state.LoadUseIndex(ws)
+	s.Enabled = true
+	if err := state.SaveUseIndex(ws, s); err != nil {
+		return xerrors.Internal("save_use_index", "cannot persist flag", err)
+	}
+	fmt.Fprintf(stdout, "Kizunax index resolver: enabled for workspace %s\n", root)
+	fmt.Fprintln(stdout, "Next review will use v2 (index-backed) resolver. First run rebuilds the index (~2 min for a medium repo); subsequent reviews use incremental update.")
+	return nil
+}
+
+func runIndexDisable(ws state.WorkspaceDir, root string, stdout io.Writer) error {
+	s, _ := state.LoadUseIndex(ws)
+	s.Enabled = false
+	if err := state.SaveUseIndex(ws, s); err != nil {
+		return xerrors.Internal("save_use_index", "cannot persist flag", err)
+	}
+	fmt.Fprintf(stdout, "Kizunax index resolver: disabled for workspace %s\n", root)
+	fmt.Fprintln(stdout, "Next review will use v1 (regex) resolver. The on-disk index is kept; run `kizunax index purge` to remove it.")
+	return nil
+}
+
+func runIndexToggle(ws state.WorkspaceDir, root string, stdout io.Writer) error {
+	s, _ := state.LoadUseIndex(ws)
+	s.Enabled = !s.Enabled
+	if err := state.SaveUseIndex(ws, s); err != nil {
+		return xerrors.Internal("save_use_index", "cannot persist flag", err)
+	}
+	label := "disabled"
+	if s.Enabled {
+		label = "enabled"
+	}
+	fmt.Fprintf(stdout, "Kizunax index resolver: %s for workspace %s\n", label, root)
+	return nil
+}
+
 func runIndexInfo(ws state.WorkspaceDir, symbol string, stdout io.Writer) error {
 	idxPath := filepath.Join(ws.Root, "index", "index.json")
 	idx, err := index.LoadJSON(idxPath)
@@ -151,4 +203,11 @@ func runIndexInfo(ws state.WorkspaceDir, symbol string, stdout io.Writer) error 
 		}
 	}
 	return nil
+}
+
+func boolOnOff(b bool) string {
+	if b {
+		return "ENABLED (v2)"
+	}
+	return "disabled (v1)"
 }
