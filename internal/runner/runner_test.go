@@ -12,6 +12,7 @@ import (
 	"testing"
 
 	"github.com/thanhhaudev/kizunax-plugin-cc/internal/config"
+	"github.com/thanhhaudev/kizunax-plugin-cc/internal/state"
 	"github.com/thanhhaudev/llmreviewkit/diff"
 	"github.com/thanhhaudev/llmreviewkit/git"
 	"github.com/thanhhaudev/llmreviewkit/prompt"
@@ -426,6 +427,43 @@ func TestRun_EnrichesBundleWithReferencedFiles(t *testing.T) {
 	reqUser := p.requests[0].Messages[0].Content
 	if !strings.Contains(reqUser, "authz/checker.go") {
 		t.Fatalf("expected referenced file in prompt; got:\n%s", reqUser)
+	}
+}
+
+func TestRunner_ExpandFlagsThreadIntoResolver(t *testing.T) {
+	tcs := []struct {
+		name       string
+		opts       Options
+		envDisable string
+		envExpand  string
+		want       [3]bool
+	}{
+		{"all-off-default", Options{}, "", "", [3]bool{false, false, false}},
+		{"per-flag-only", Options{ExpandCallers: true}, "", "", [3]bool{true, false, false}},
+		{"expand-all-shortcut", Options{ExpandAll: true}, "", "", [3]bool{true, true, true}},
+		{"no-expand-wins", Options{NoExpand: true, ExpandAll: true}, "", "", [3]bool{false, false, false}},
+		{"kill-switch-wins", Options{ExpandAll: true}, "1", "", [3]bool{false, false, false}},
+		{"env-csv", Options{}, "", "callers,tests", [3]bool{true, false, true}},
+	}
+	for _, tc := range tcs {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Setenv("KIZUNAX_DISABLE_EXPAND", tc.envDisable)
+			t.Setenv("KIZUNAX_EXPAND", tc.envExpand)
+			c, td, ts := resolveExpansion(tc.opts, state.WorkspaceDir{})
+			got := [3]bool{c, td, ts}
+			if got != tc.want {
+				t.Fatalf("%s: want %v, got %v", tc.name, tc.want, got)
+			}
+		})
+	}
+}
+
+func TestRunner_EnrichBudgetFor(t *testing.T) {
+	if got := enrichBudgetFor(false); got != 32*1024 {
+		t.Errorf("no expand: want 32 KB, got %d", got)
+	}
+	if got := enrichBudgetFor(true); got != 0 {
+		t.Errorf("with expand: want 0 (auto-bump), got %d", got)
 	}
 }
 

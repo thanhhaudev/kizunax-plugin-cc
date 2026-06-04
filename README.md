@@ -51,6 +51,7 @@ It asks for provider (`openai` or `anthropic`), base URL, model, and API key. Th
 | `/kizunax:cancel <id>` | Cancel a running background job |
 | `/kizunax:setup` | Re-configure provider, model, or API key |
 | `/kizunax:index <sub>` | Manage the v0.13 workspace AST index (`status`, `enable`/`disable`/`toggle`, `sync`, `purge`, `info <symbol>`) |
+| `/kizunax:expansion <sub>` | Toggle v1.1.0 bundle expansion strategies (`status`, `enable`/`disable`/`set` `<csv>`, `reset`) |
 
 Each command accepts flags. See `plugins/kizunax/commands/` for details.
 

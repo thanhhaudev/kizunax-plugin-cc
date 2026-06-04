@@ -6,7 +6,7 @@ import (
 	xerrors "github.com/thanhhaudev/llmreviewkit/errors"
 )
 
-const Version = "0.15.0"
+const Version = "0.16.0"
 
 func Dispatch(args []string) error {
 	if len(args) == 0 {
@@ -39,6 +39,8 @@ func Dispatch(args []string) error {
 		return runGrammars(args[1:])
 	case "index":
 		return runIndex(args[1:])
+	case "expansion":
+		return runExpansion(args[1:])
 	case "version", "--version", "-v":
 		fmt.Printf("kizunax %s\n", Version)
 		return nil
