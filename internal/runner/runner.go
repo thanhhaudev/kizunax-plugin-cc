@@ -73,32 +73,34 @@ func Run(ctx context.Context, pluginRoot string, p provider.Provider, bundle dif
 	if opts.WorkspaceRoot != "" && (len(bundle.Diff) > 0 || len(bundle.Untracked) > 0) {
 		symbols.SetWorkspaceRoot(opts.WorkspaceRoot)
 		syms := symbols.ExtractFromBundle(bundle)
-		if opts.Verbose {
-			fmt.Fprintf(os.Stderr, "[verbose] scanner: extracted %d symbols\n", len(syms))
+		diffPaths := diff.Paths(bundle)
+		stats, rerr := resolver.FindReferences(syms, opts.WorkspaceRoot, diffPaths, 5, 4*1024)
+		if rerr != nil {
+			fmt.Fprintf(os.Stderr, "[warn] resolver: %v\n", rerr)
 		}
-		if len(syms) > 0 {
-			diffPaths := diff.Paths(bundle)
-			stats, rerr := resolver.FindReferences(syms, opts.WorkspaceRoot, diffPaths, 5, 4*1024)
-			refs := stats.Refs
-			if rerr != nil {
-				fmt.Fprintf(os.Stderr, "[warn] resolver: %v\n", rerr)
-			} else {
-				if opts.Verbose {
-					fmt.Fprintf(os.Stderr, "[verbose] resolver: %d references for %d symbols\n", len(refs), len(syms))
-				}
-				budget := computePromptBudget(bundle, opts.Glossary, schemaJSON)
-				before := len(bundle.Warnings)
-				diff.AttachReferenced(&bundle, toReferenceInputs(refs), budget)
-				if opts.Verbose {
-					fmt.Fprintf(os.Stderr, "[verbose] bundle: %d referenced files attached (budget=%d bytes)\n", len(bundle.ReferencedFiles), budget)
-				}
-				for _, w := range bundle.Warnings[before:] {
-					if strings.HasPrefix(w, "referenced files dropped") {
-						fmt.Fprintf(os.Stderr, "[warn] %s\n", w)
-					}
-				}
+		if opts.Verbose {
+			fmt.Fprintf(os.Stderr,
+				"[verbose] enrichment: scanner=%d filtered=%d resolved=%d (%d refs)\n",
+				stats.ExtractedCount, stats.FilteredCount, stats.ResolvedCount, len(stats.Refs))
+		}
+
+		budget := computePromptBudget(bundle, opts.Glossary, schemaJSON)
+		before := len(bundle.Warnings)
+		attachRes := diff.AttachReferenced(&bundle, toReferenceInputs(stats.Refs), budget)
+		if opts.Verbose {
+			fmt.Fprintf(os.Stderr,
+				"[verbose] bundle: %d attached, %d dropped (used %s / %s budget)\n",
+				attachRes.Attached, attachRes.Dropped,
+				humanBytes(attachRes.UsedBytes), humanBytes(attachRes.BudgetBytes))
+		}
+		for _, w := range bundle.Warnings[before:] {
+			if strings.HasPrefix(w, "referenced files dropped") {
+				fmt.Fprintf(os.Stderr, "[warn] %s\n", w)
 			}
 		}
+		// Bundle log wiring lands in Task 10.
+		_ = attachRes
+		_ = diffPaths
 	}
 
 	pr, err := prompt.Build(pluginRoot, opts.Mode, bundle, schemaJSON, opts.Focus, opts.Glossary)
@@ -236,4 +238,18 @@ func helperQuotaOK(ws state.WorkspaceDir, apiKey string) bool {
 		return false
 	}
 	return true
+}
+
+// humanBytes formats a byte count as "6.2KB" or "32KB". Used in verbose
+// stderr lines. v0.12.4 enrichment cap is 32 KiB, so MB precision is
+// unnecessary.
+func humanBytes(n int) string {
+	if n < 1024 {
+		return fmt.Sprintf("%dB", n)
+	}
+	kb := float64(n) / 1024.0
+	if kb >= 100 {
+		return fmt.Sprintf("%.0fKB", kb)
+	}
+	return fmt.Sprintf("%.1fKB", kb)
 }
