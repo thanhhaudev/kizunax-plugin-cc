@@ -9,7 +9,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/thanhhaudev/kizunax-plugin-cc/internal/config"
 	xerrors "github.com/thanhhaudev/kizunax-plugin-cc/pkg/errors"
 )
 
@@ -21,14 +20,14 @@ func TestAnthropic_HeadersAndPath(t *testing.T) {
 		if r.Header.Get("x-api-key") == "" {
 			t.Error("missing x-api-key")
 		}
-		if r.Header.Get("anthropic-version") != config.AnthropicVersion {
+		if r.Header.Get("anthropic-version") != AnthropicVersion {
 			t.Errorf("anthropic-version = %q", r.Header.Get("anthropic-version"))
 		}
 		w.Write([]byte(`{"id":"m","type":"message","role":"assistant","content":[{"type":"text","text":"ok"}],"stop_reason":"end_turn","usage":{"input_tokens":5,"output_tokens":2,"total_tokens":7}}`))
 	}))
 	defer server.Close()
 
-	a := NewAnthropic(config.Config{BaseURL: server.URL, Model: "m", APIKey: "k"})
+	a := NewAnthropic(AnthropicConfig{BaseURL: server.URL, Model: "m", APIKey: "k"})
 	resp, err := a.Chat(context.Background(), ChatRequest{Model: "m", Messages: []Message{{Role: "user", Content: "x"}}})
 	if err != nil {
 		t.Fatalf("Chat: %v", err)
@@ -65,7 +64,7 @@ func TestAnthropic_ToolUseExtraction(t *testing.T) {
 	}))
 	defer server.Close()
 
-	a := NewAnthropic(config.Config{BaseURL: server.URL, Model: "m", APIKey: "k"})
+	a := NewAnthropic(AnthropicConfig{BaseURL: server.URL, Model: "m", APIKey: "k"})
 	resp, err := a.Chat(context.Background(), ChatRequest{
 		Model: "m", Messages: []Message{{Role: "user", Content: "x"}},
 		JSONSchema:    `{"type":"object","properties":{"verdict":{"type":"string"}}}`,
@@ -107,7 +106,7 @@ func TestAnthropic_400FallbackDropsTools(t *testing.T) {
 	}))
 	defer server.Close()
 
-	a := NewAnthropic(config.Config{BaseURL: server.URL, Model: "m", APIKey: "k"})
+	a := NewAnthropic(AnthropicConfig{BaseURL: server.URL, Model: "m", APIKey: "k"})
 	resp, err := a.Chat(context.Background(), ChatRequest{
 		Model: "m", Messages: []Message{{Role: "user", Content: "x"}},
 		JSONSchema: `{"type":"object"}`, TryJSONSchema: true,
@@ -131,7 +130,7 @@ func TestAnthropic_KizunaXFlatErrorShape(t *testing.T) {
 	}))
 	defer server.Close()
 
-	a := NewAnthropic(config.Config{BaseURL: server.URL, Model: "x", APIKey: "k"})
+	a := NewAnthropic(AnthropicConfig{BaseURL: server.URL, Model: "x", APIKey: "k"})
 	_, err := a.Chat(context.Background(), ChatRequest{Model: "x", Messages: []Message{{Role: "user", Content: "y"}}})
 	if err == nil {
 		t.Fatal("expected error")
@@ -149,7 +148,7 @@ func TestAnthropic_429Quota(t *testing.T) {
 	}))
 	defer server.Close()
 
-	a := NewAnthropic(config.Config{BaseURL: server.URL, Model: "m", APIKey: "k"})
+	a := NewAnthropic(AnthropicConfig{BaseURL: server.URL, Model: "m", APIKey: "k"})
 	_, err := a.Chat(context.Background(), ChatRequest{Model: "m", Messages: []Message{{Role: "user", Content: "x"}}})
 	if err == nil {
 		t.Fatal("expected error")

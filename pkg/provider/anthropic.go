@@ -10,7 +10,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/thanhhaudev/kizunax-plugin-cc/internal/config"
 	xerrors "github.com/thanhhaudev/kizunax-plugin-cc/pkg/errors"
 )
 
@@ -23,12 +22,12 @@ type AnthropicAdapter struct {
 	client  *http.Client
 }
 
-func NewAnthropic(cfg config.Config) *AnthropicAdapter {
+func NewAnthropic(cfg AnthropicConfig) *AnthropicAdapter {
 	return &AnthropicAdapter{
 		baseURL: strings.TrimRight(cfg.BaseURL, "/"),
 		model:   cfg.Model,
 		apiKey:  cfg.APIKey,
-		client:  &http.Client{Timeout: config.HTTPTimeout},
+		client:  &http.Client{Timeout: HTTPTimeout},
 	}
 }
 
@@ -100,10 +99,10 @@ func (a *AnthropicAdapter) Chat(ctx context.Context, req ChatRequest) (ChatRespo
 
 	maxTokens := req.MaxTokens
 	if maxTokens <= 0 {
-		maxTokens = config.DefaultMaxTokens
+		maxTokens = DefaultMaxTokens
 	}
-	if maxTokens > config.MaxOutputTokens {
-		maxTokens = config.MaxOutputTokens
+	if maxTokens > MaxOutputTokens {
+		maxTokens = MaxOutputTokens
 	}
 
 	body := anthropicReq{
@@ -147,7 +146,7 @@ func (a *AnthropicAdapter) send(ctx context.Context, body anthropicReq, usingToo
 	}
 	httpReq.Header.Set("Content-Type", "application/json")
 	httpReq.Header.Set("x-api-key", a.apiKey)
-	httpReq.Header.Set("anthropic-version", config.AnthropicVersion)
+	httpReq.Header.Set("anthropic-version", AnthropicVersion)
 
 	httpResp, err := a.client.Do(httpReq)
 	if err != nil {

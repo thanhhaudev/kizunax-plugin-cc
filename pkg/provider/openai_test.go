@@ -9,7 +9,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/thanhhaudev/kizunax-plugin-cc/internal/config"
 	xerrors "github.com/thanhhaudev/kizunax-plugin-cc/pkg/errors"
 )
 
@@ -54,7 +53,7 @@ func TestOpenAI_Success(t *testing.T) {
 	}))
 	defer server.Close()
 
-	a := NewOpenAI(config.Config{
+	a := NewOpenAI(OpenAIConfig{
 		BaseURL: server.URL, Model: "test-model", APIKey: "kx_test",
 	})
 	resp, err := a.Chat(context.Background(), ChatRequest{
@@ -82,7 +81,7 @@ func TestOpenAI_FallbackTotalFromTokensConsumed(t *testing.T) {
 	}))
 	defer server.Close()
 
-	a := NewOpenAI(config.Config{BaseURL: server.URL, Model: "m", APIKey: "k"})
+	a := NewOpenAI(OpenAIConfig{BaseURL: server.URL, Model: "m", APIKey: "k"})
 	resp, err := a.Chat(context.Background(), ChatRequest{Model: "m", Messages: []Message{{Role: "user", Content: "x"}}})
 	if err != nil {
 		t.Fatalf("Chat: %v", err)
@@ -102,7 +101,7 @@ func TestOpenAI_FallbackTotalFromSum(t *testing.T) {
 	}))
 	defer server.Close()
 
-	a := NewOpenAI(config.Config{BaseURL: server.URL, Model: "m", APIKey: "k"})
+	a := NewOpenAI(OpenAIConfig{BaseURL: server.URL, Model: "m", APIKey: "k"})
 	resp, _ := a.Chat(context.Background(), ChatRequest{Model: "m", Messages: []Message{{Role: "user", Content: "x"}}})
 	if resp.TotalTokens != 50 {
 		t.Errorf("TotalTokens = %d, want 50 (sum)", resp.TotalTokens)
@@ -116,7 +115,7 @@ func TestOpenAI_401Auth(t *testing.T) {
 	}))
 	defer server.Close()
 
-	a := NewOpenAI(config.Config{BaseURL: server.URL, Model: "m", APIKey: "bad"})
+	a := NewOpenAI(OpenAIConfig{BaseURL: server.URL, Model: "m", APIKey: "bad"})
 	_, err := a.Chat(context.Background(), ChatRequest{Model: "m", Messages: []Message{{Role: "user", Content: "x"}}})
 	if err == nil {
 		t.Fatal("expected error for 401")
@@ -137,7 +136,7 @@ func TestOpenAI_429Quota(t *testing.T) {
 	}))
 	defer server.Close()
 
-	a := NewOpenAI(config.Config{BaseURL: server.URL, Model: "m", APIKey: "k"})
+	a := NewOpenAI(OpenAIConfig{BaseURL: server.URL, Model: "m", APIKey: "k"})
 	_, err := a.Chat(context.Background(), ChatRequest{Model: "m", Messages: []Message{{Role: "user", Content: "x"}}})
 	if err == nil {
 		t.Fatal("expected error for 429")
@@ -176,7 +175,7 @@ func TestOpenAI_FallbackOn400WithJSONSchema(t *testing.T) {
 	}))
 	defer server.Close()
 
-	a := NewOpenAI(config.Config{BaseURL: server.URL, Model: "m", APIKey: "k"})
+	a := NewOpenAI(OpenAIConfig{BaseURL: server.URL, Model: "m", APIKey: "k"})
 	resp, err := a.Chat(context.Background(), ChatRequest{
 		Model:         "m",
 		Messages:      []Message{{Role: "user", Content: "x"}},

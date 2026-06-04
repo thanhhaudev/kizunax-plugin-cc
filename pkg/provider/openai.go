@@ -10,7 +10,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/thanhhaudev/kizunax-plugin-cc/internal/config"
 	xerrors "github.com/thanhhaudev/kizunax-plugin-cc/pkg/errors"
 )
 
@@ -21,12 +20,12 @@ type OpenAIAdapter struct {
 	client  *http.Client
 }
 
-func NewOpenAI(cfg config.Config) *OpenAIAdapter {
+func NewOpenAI(cfg OpenAIConfig) *OpenAIAdapter {
 	return &OpenAIAdapter{
 		baseURL: strings.TrimRight(cfg.BaseURL, "/"),
 		model:   cfg.Model,
 		apiKey:  cfg.APIKey,
-		client:  &http.Client{Timeout: config.HTTPTimeout},
+		client:  &http.Client{Timeout: HTTPTimeout},
 	}
 }
 
