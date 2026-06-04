@@ -8,7 +8,7 @@ import (
 	"strings"
 	"sync/atomic"
 
-	xerrors "github.com/thanhhaudev/kizunax-plugin-cc/pkg/errors"
+	xerrors "github.com/thanhhaudev/llmreviewkit/errors"
 )
 
 // ProviderEntry stores per-provider runtime fields.

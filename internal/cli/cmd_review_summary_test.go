@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/thanhhaudev/kizunax-plugin-cc/pkg/prompt"
+	"github.com/thanhhaudev/llmreviewkit/prompt"
 )
 
 func TestRunReview_SummaryAndNoSummary_ConflictsAsUserError(t *testing.T) {

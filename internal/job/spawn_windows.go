@@ -3,7 +3,7 @@
 package job
 
 import (
-	xerrors "github.com/thanhhaudev/kizunax-plugin-cc/pkg/errors"
+	xerrors "github.com/thanhhaudev/llmreviewkit/errors"
 	"github.com/thanhhaudev/kizunax-plugin-cc/internal/state"
 )
 

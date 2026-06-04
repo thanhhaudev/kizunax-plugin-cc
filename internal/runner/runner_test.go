@@ -12,11 +12,11 @@ import (
 	"testing"
 
 	"github.com/thanhhaudev/kizunax-plugin-cc/internal/config"
-	"github.com/thanhhaudev/kizunax-plugin-cc/pkg/diff"
-	"github.com/thanhhaudev/kizunax-plugin-cc/pkg/git"
-	"github.com/thanhhaudev/kizunax-plugin-cc/pkg/prompt"
-	"github.com/thanhhaudev/kizunax-plugin-cc/pkg/provider"
-	"github.com/thanhhaudev/kizunax-plugin-cc/pkg/schema"
+	"github.com/thanhhaudev/llmreviewkit/diff"
+	"github.com/thanhhaudev/llmreviewkit/git"
+	"github.com/thanhhaudev/llmreviewkit/prompt"
+	"github.com/thanhhaudev/llmreviewkit/provider"
+	"github.com/thanhhaudev/llmreviewkit/schema"
 )
 
 // mockProvider returns canned responses in order.
