@@ -35,9 +35,9 @@ func (e Entry) CDNUrl() string {
 var Registry = map[string]Entry{
 	"php": {
 		Lang: "php", GrammarName: "php",
-		NpmPackage: "tree-sitter-php", Version: "0.24.2",
+		NpmPackage: "tree-sitter-php", Version: "0.23.10",
 		WasmFile: "tree-sitter-php.wasm",
-		SHA256:   "d4df6a6ff08c87c3ec4f9cbb785fe09998a0cb570e03f57d7b19b3acfb146aa7",
+		SHA256:   "36830bfcd25a58a2840f18f94e442e0a5f02030a1d063349c19cf97803508ce6",
 	},
 	"typescript": {
 		Lang: "typescript", GrammarName: "typescript",

@@ -10,8 +10,8 @@ import (
 	"github.com/tetratelabs/wazero/api"
 )
 
-// NodeDef is a simple (name, symbolKind, startByte, endByte) tuple returned
-// by WalkNamedDefs. symbolKind is the node's type ID as returned by the grammar.
+// NodeDef is a simple (nameStart, nameEnd) byte range returned by
+// WalkNamedChildren for each matching node's name-field child.
 type NodeDef struct {
 	NameStart uint32
 	NameEnd   uint32
@@ -154,10 +154,13 @@ func (l *Language) WalkNamedChildren(ctx context.Context, tree *Tree, matchSymID
 		return nil, fmt.Errorf("treesitter: ts_tree_cursor_new_wasm: %w", err)
 	}
 
-	// Save cursor state (12 bytes at TRANSFER_BUFFER).
+	// Save cursor state (16 bytes at TRANSFER_BUFFER).
 	cursor := make([]byte, sizeOfCursor)
 	cursorRaw, ok := mem.Read(r.transferBuf, sizeOfCursor)
 	if !ok {
+		// Cursor was allocated but we can't snapshot it; free it via the
+		// handle still sitting in TRANSFER_BUFFER, then bail.
+		cursorDeleteFn.Call(ctx) //nolint:errcheck
 		return nil, fmt.Errorf("treesitter: read cursor from TRANSFER_BUFFER failed")
 	}
 	copy(cursor, cursorRaw)
@@ -314,6 +317,7 @@ func (l *Language) WalkAllNamedNodes(ctx context.Context, tree *Tree, matchSymID
 	cursor := make([]byte, sizeOfCursor)
 	cursorRaw, ok := mem.Read(r.transferBuf, sizeOfCursor)
 	if !ok {
+		cursorDeleteFn.Call(ctx) //nolint:errcheck
 		return nil, fmt.Errorf("treesitter: read cursor from TRANSFER_BUFFER failed")
 	}
 	copy(cursor, cursorRaw)

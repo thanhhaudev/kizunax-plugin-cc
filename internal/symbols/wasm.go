@@ -220,6 +220,7 @@ func extractPythonViaWalk(ctx context.Context, lang *treesitter.Language, conten
 	attributeID := lang.SymbolIDForName(ctx, "attribute", true)
 	dottedNameID := lang.SymbolIDForName(ctx, "dotted_name", true)
 	aliasID := lang.SymbolIDForName(ctx, "aliased_import", true)
+	decoratorID := lang.SymbolIDForName(ctx, "decorator", true)
 
 	// Field IDs.
 	nameFieldID := lang.FieldIDForName(ctx, "name")
@@ -227,8 +228,8 @@ func extractPythonViaWalk(ctx context.Context, lang *treesitter.Language, conten
 	attributeFieldID := lang.FieldIDForName(ctx, "attribute")
 	moduleNameFieldID := lang.FieldIDForName(ctx, "module_name")
 
-	matchIDs := make([]uint16, 0, 6)
-	for _, id := range []uint16{fnDefID, classDefID, importID, importFromID, callID} {
+	matchIDs := make([]uint16, 0, 7)
+	for _, id := range []uint16{fnDefID, classDefID, importID, importFromID, callID, decoratorID} {
 		if id != 0 {
 			matchIDs = append(matchIDs, id)
 		}
@@ -272,15 +273,20 @@ func extractPythonViaWalk(ctx context.Context, lang *treesitter.Language, conten
 			extractPythonImportNames(ctx, lang, tree, n.NodeRaw[:], dottedNameID, aliasID, nameFieldID, content, emit)
 		case callID:
 			if s, e, ok := lang.NodeChildByFieldID(ctx, tree, n.NodeRaw[:], functionFieldID); ok {
-				// Determine if function child is an attribute (method call) by checking type.
-				// We don't have its type ID directly — re-look up by inspecting bytes.
-				// Heuristic: if the byte range contains '.', take the last segment.
 				fnText := sliceBytes(content, s, e)
 				if attributeID != 0 && strings.Contains(fnText, ".") {
-					// Take last segment (the method name)
-					if dot := strings.LastIndex(fnText, "."); dot != -1 {
-						method := fnText[dot+1:]
-						emit(method, SymCall, s+uint32(dot)+1)
+					// Method call: emit terminal name as Name, chain as Pkg.
+					// e.g. self.db.session.commit() → Name="commit", Pkg="self.db.session"
+					name, pkg := splitDottedPath(fnText)
+					if name != "" {
+						dot := strings.LastIndex(fnText, ".")
+						out = append(out, Symbol{
+							Name: name,
+							Pkg:  pkg,
+							Kind: SymCall,
+							File: path,
+							Line: lineAt(content, s+uint32(dot)+1),
+						})
 					}
 				} else {
 					emit(fnText, SymCall, s)
@@ -288,6 +294,30 @@ func extractPythonViaWalk(ctx context.Context, lang *treesitter.Language, conten
 				_ = e
 				_ = attributeFieldID
 			}
+		case decoratorID:
+			// @app.route("/login") → emit "app.route" with split (Name="route", Pkg="app").
+			// Bare decorators like @staticmethod and plain calls like @deco()
+			// are handled by other emission paths (no receiver to surface here).
+			decoratorText := sliceBytes(content, n.StartByte, n.EndByte)
+			receiver := pythonDecoratorReceiver(decoratorText)
+			if receiver == "" {
+				break
+			}
+			name, pkg := splitDottedPath(receiver)
+			if name == "" {
+				break
+			}
+			// Find the offset of the receiver inside the decorator text so the
+			// emitted Line is the decorator line, not the function-definition line.
+			relOff := strings.Index(decoratorText, receiver)
+			byteOff := n.StartByte + uint32(relOff)
+			out = append(out, Symbol{
+				Name: name,
+				Pkg:  pkg,
+				Kind: SymCall,
+				File: path,
+				Line: lineAt(content, byteOff),
+			})
 		}
 	}
 	return out
@@ -336,6 +366,67 @@ func sliceBytes(src []byte, start, end uint32) string {
 		return ""
 	}
 	return string(src[start:end])
+}
+
+// splitDottedPath splits a dotted-name string into a (name, pkg) pair
+// matching the Symbol Pkg convention: the last segment is Name, everything
+// before is Pkg. Examples:
+//
+//	"app"          → ("app", "")
+//	"app.route"    → ("route", "app")
+//	"a.b.c"        → ("c", "a.b")
+//	""             → ("", "")
+//	".leading"     → ("leading", "")
+//	"trailing."    → ("", "trailing")
+//
+// Used by extractPythonViaWalk for decorator method qualifiers and
+// dotted-import path emission.
+func splitDottedPath(s string) (name, pkg string) {
+	if s == "" {
+		return "", ""
+	}
+	dot := strings.LastIndex(s, ".")
+	if dot < 0 {
+		return s, ""
+	}
+	return s[dot+1:], s[:dot]
+}
+
+// pythonDecoratorReceiver extracts the receiver path of a Python decorator
+// that is an attribute call. Returns "" when the decorator is bare
+// (@staticmethod) or a plain identifier call (@deco()) — both cases are
+// already covered by other emission paths in extractPythonViaWalk, so this
+// helper is the dedicated attribute-call extraction step.
+//
+// Examples:
+//
+//	"@app.route(\"/login\")" → "app.route"
+//	"@a.b.c(arg)"            → "a.b.c"
+//	"@staticmethod"          → ""    (bare decorator)
+//	"@deco()"                → ""    (plain call, not attribute)
+//
+// Used by extractPythonViaWalk for decorator method-qualifier capture.
+func pythonDecoratorReceiver(decoratorText string) string {
+	s := strings.TrimSpace(decoratorText)
+	if !strings.HasPrefix(s, "@") {
+		return ""
+	}
+	s = s[1:] // drop leading '@'
+
+	// Locate the opening paren of the call. If none, the decorator is
+	// bare (e.g. @staticmethod, @property) — no receiver to extract.
+	paren := strings.IndexByte(s, '(')
+	if paren < 0 {
+		return ""
+	}
+	head := strings.TrimSpace(s[:paren])
+
+	// The receiver must be an attribute path (contains '.') — a plain
+	// identifier call like @deco() has no method-qualifier to surface.
+	if !strings.Contains(head, ".") {
+		return ""
+	}
+	return head
 }
 
 // extractPHPViaWalk extracts PHP symbols using tree cursor traversal. See

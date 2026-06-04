@@ -98,3 +98,32 @@ func TestPaths_NoBPrefixLines(t *testing.T) {
 		t.Fatalf("expected empty, got %v", got)
 	}
 }
+
+func TestDiffOnlyPaths_ExcludesUntracked(t *testing.T) {
+	// Untracked-only file MUST NOT appear in DiffOnlyPaths.
+	// A path that is BOTH in the diff AND untracked must still appear once
+	// (from the diff side).
+	b := Bundle{
+		Diff: `diff --git a/tracked.go b/tracked.go
++++ b/tracked.go
+diff --git a/both.go b/both.go
++++ b/both.go
+`,
+		Untracked: []UntrackedFile{
+			{Path: "scripts/new-tool.sh"}, // untracked only — must be EXCLUDED
+			{Path: "both.go"},             // both diff + untracked — must appear once
+		},
+	}
+	got := DiffOnlyPaths(b)
+	want := []string{"both.go", "tracked.go"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("DiffOnlyPaths got %v want %v", got, want)
+	}
+}
+
+func TestDiffOnlyPaths_EmptyBundle(t *testing.T) {
+	got := DiffOnlyPaths(Bundle{})
+	if len(got) != 0 {
+		t.Fatalf("expected empty, got %v", got)
+	}
+}
