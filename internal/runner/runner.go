@@ -70,6 +70,15 @@ type Options struct {
 	// nil disables telemetry. The kizunax CLI wrapper sets this from
 	// KIZUNAX_BUNDLE_LOG=1 by opening the rotation-managed log file.
 	BundleLogSink io.Writer
+
+	// v0.16.0 — bundle expansion controls. All default false.
+	// resolveExpansion (internal/runner/expansion_resolve.go) walks the
+	// precedence stack and threads the resolved values into engine.Config.
+	ExpandCallers  bool
+	ExpandTypeDefs bool
+	ExpandTests    bool
+	ExpandAll      bool // shortcut: enables all three
+	NoExpand       bool // per-call kill switch
 }
 
 func Run(ctx context.Context, pluginRoot string, p provider.Provider, bundle diff.Bundle, opts Options) (Result, error) {
