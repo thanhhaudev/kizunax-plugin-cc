@@ -8,7 +8,7 @@ import (
 	"github.com/thanhhaudev/kizunax-plugin-cc/pkg/diff"
 	xerrors "github.com/thanhhaudev/kizunax-plugin-cc/pkg/errors"
 	"github.com/thanhhaudev/kizunax-plugin-cc/internal/job"
-	"github.com/thanhhaudev/kizunax-plugin-cc/internal/prompt"
+	"github.com/thanhhaudev/kizunax-plugin-cc/pkg/prompt"
 	"github.com/thanhhaudev/kizunax-plugin-cc/pkg/render"
 	"github.com/thanhhaudev/kizunax-plugin-cc/internal/state"
 )

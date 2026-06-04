@@ -16,7 +16,7 @@ import (
 	xerrors "github.com/thanhhaudev/kizunax-plugin-cc/pkg/errors"
 	"github.com/thanhhaudev/kizunax-plugin-cc/internal/helper"
 	"github.com/thanhhaudev/kizunax-plugin-cc/internal/index"
-	"github.com/thanhhaudev/kizunax-plugin-cc/internal/prompt"
+	"github.com/thanhhaudev/kizunax-plugin-cc/pkg/prompt"
 	"github.com/thanhhaudev/kizunax-plugin-cc/internal/provider"
 	"github.com/thanhhaudev/kizunax-plugin-cc/internal/resolver"
 	"github.com/thanhhaudev/kizunax-plugin-cc/pkg/schema"
