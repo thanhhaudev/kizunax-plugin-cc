@@ -150,6 +150,28 @@ func mustMkdir(t *testing.T, p string) {
 	}
 }
 
+func TestFindReferences_StatsResolvedCountSemantics(t *testing.T) {
+	// 1 symbol matched in 3 files → ResolvedCount=1, len(Refs)=3.
+	// This is the key invariant for measurement: ResolvedCount counts
+	// *distinct symbols matched*, not file hits.
+	ws := t.TempDir()
+	mustWrite(t, filepath.Join(ws, "a.go"), "package x\nfunc Shared() {}\n")
+	mustWrite(t, filepath.Join(ws, "b.go"), "package x\nfunc Shared() {}\n")
+	mustWrite(t, filepath.Join(ws, "c.go"), "package x\nfunc Shared() {}\n")
+	syms := []symbols.Symbol{{Name: "Shared", Kind: symbols.SymCall, File: "main.go"}}
+
+	stats, err := FindReferences(syms, ws, []string{"main.go"}, 5, 8192)
+	if err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if stats.ResolvedCount != 1 {
+		t.Fatalf("ResolvedCount: want 1 (one distinct sym), got %d", stats.ResolvedCount)
+	}
+	if len(stats.Refs) != 3 {
+		t.Fatalf("len(Refs): want 3 (three file hits), got %d", len(stats.Refs))
+	}
+}
+
 func itoa(n int) string {
 	if n == 0 {
 		return "0"
