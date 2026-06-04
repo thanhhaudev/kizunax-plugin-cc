@@ -10,8 +10,8 @@ import (
 	"github.com/tetratelabs/wazero/api"
 )
 
-// NodeDef is a simple (name, symbolKind, startByte, endByte) tuple returned
-// by WalkNamedDefs. symbolKind is the node's type ID as returned by the grammar.
+// NodeDef is a simple (nameStart, nameEnd) byte range returned by
+// WalkNamedChildren for each matching node's name-field child.
 type NodeDef struct {
 	NameStart uint32
 	NameEnd   uint32
