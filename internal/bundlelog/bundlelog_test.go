@@ -165,3 +165,25 @@ func TestAppend_SilentOnPermissionError(t *testing.T) {
 		t.Fatalf("stderr leaked %d bytes: %q", n, captured[:n])
 	}
 }
+
+func TestStats_NewV0_13Fields(t *testing.T) {
+	s := Stats{
+		Extracted: 10, Filtered: 8, Resolved: 5,
+		Attached: 3, Dropped: 1,
+		BudgetBytes: 32768, UsedBytes: 1024,
+		// v0.13 additions:
+		IndexHits:    5,
+		IndexMisses:  3,
+		ResolverPath: "v2",
+	}
+	b, err := json.Marshal(s)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	got := string(b)
+	for _, want := range []string{`"index_hits":5`, `"index_misses":3`, `"resolver_path":"v2"`} {
+		if !strings.Contains(got, want) {
+			t.Errorf("Stats JSON missing %s; got %s", want, got)
+		}
+	}
+}

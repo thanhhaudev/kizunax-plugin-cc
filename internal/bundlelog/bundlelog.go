@@ -31,7 +31,7 @@ type Entry struct {
 	Stats     Stats                           `json:"stats"`
 }
 
-// Stats is the aggregate counts block. Field names match resolver.ResolveStats
+// Stats is the aggregate counts block. Field names match resolver.ResolveStats(V2)
 // + diff.AttachResult for direct jq pivot.
 type Stats struct {
 	Extracted   int `json:"extracted"`
@@ -41,6 +41,10 @@ type Stats struct {
 	Dropped     int `json:"dropped"`
 	BudgetBytes int `json:"budget_bytes"`
 	UsedBytes   int `json:"used_bytes"`
+	// v0.13.0 additions (omitempty so v0.12.4 entries don't break parsing)
+	IndexHits    int    `json:"index_hits,omitempty"`
+	IndexMisses  int    `json:"index_misses,omitempty"`
+	ResolverPath string `json:"resolver_path,omitempty"`
 }
 
 // Enabled returns true iff KIZUNAX_BUNDLE_LOG is set to a truthy value.
