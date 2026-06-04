@@ -1,11 +1,7 @@
 # kizunax-plugin-cc
 
-A Claude Code plugin that runs AI code reviews through any OpenAI- or
-Anthropic-compatible endpoint. Single Go binary, no extra CLI.
-
-> The repo is named after [KizunaX](https://kizunax.io), the API provider
-> it was first built against. The plugin works with any compatible
-> endpoint; KizunaX is not required.
+A Claude Code plugin that runs AI code reviews against the
+[KizunaX](https://kizunax.io) API. Single Go binary, no extra CLI.
 
 > A personal research and learning project, built to study how LLM APIs
 > and Claude Code plugins fit together.
@@ -20,8 +16,9 @@ Claude Code  ──/kizunax:review──▶  plugins/kizunax/bin/kizunax
                                   (diff → prompt → JSON → markdown)
                                           │
                                           ▼
-                                  any OpenAI- or Anthropic-compatible
-                                  HTTP endpoint
+                                  KizunaX API
+                                  (OpenAI- or Anthropic-compatible
+                                   chat completions)
                                           │
                                           ▼
                                   markdown back to Claude
@@ -101,7 +98,7 @@ Other flags `./setup.sh` accepts: `--status`, `--enable-stop-gate`,
 | `/kizunax:result <id>` | Print the result of a finished job. |
 | `/kizunax:cancel <id>` | Cancel a running background job. |
 | `/kizunax:setup` | Re-configure provider, model, or API keys. |
-| `/kizunax:usage` | Print per-key quota table (KizunaX provider only). |
+| `/kizunax:usage` | Print per-key quota table. |
 | `/kizunax:index <sub>` | Manage the workspace AST index. |
 | `/kizunax:expansion <sub>` | Toggle bundle expansion strategies. |
 
