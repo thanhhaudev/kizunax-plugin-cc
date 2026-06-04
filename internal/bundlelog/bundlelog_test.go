@@ -35,7 +35,7 @@ func TestEnabled_RespectsEnvVar(t *testing.T) {
 }
 
 func TestAppend_WritesValidJSONL(t *testing.T) {
-	ws := state.WorkspaceDir{Root: t.TempDir()}
+	ws := state.NewWorkspaceDir(t.TempDir())
 	entry := Entry{
 		Timestamp: "2026-06-04T10:00:00Z",
 		Workspace: "test-ws",
@@ -66,7 +66,7 @@ func TestAppend_WritesValidJSONL(t *testing.T) {
 }
 
 func TestAppend_AppendsMultipleEntries(t *testing.T) {
-	ws := state.WorkspaceDir{Root: t.TempDir()}
+	ws := state.NewWorkspaceDir(t.TempDir())
 	for i := 0; i < 3; i++ {
 		Append(ws, Entry{Timestamp: "2026-06-04T10:00:00Z", Workspace: "x"})
 	}
@@ -92,14 +92,14 @@ func TestAppend_AppendsMultipleEntries(t *testing.T) {
 
 func TestAppend_EmptyWorkspaceRootSkips(t *testing.T) {
 	// Root == "" → no path to write to. Must not panic, must not create a file.
-	ws := state.WorkspaceDir{Root: ""}
+	ws := state.NewWorkspaceDir("")
 	Append(ws, Entry{Timestamp: "2026-06-04T10:00:00Z"})
 	// Nothing to assert beyond "did not panic and did not write anywhere
 	// meaningful". This test is here to lock in the guard.
 }
 
 func TestAppend_RotatesAtSizeCap(t *testing.T) {
-	ws := state.WorkspaceDir{Root: t.TempDir()}
+	ws := state.NewWorkspaceDir(t.TempDir())
 	path := filepath.Join(ws.Root, LogName)
 	backup := filepath.Join(ws.Root, BackupName)
 
@@ -148,7 +148,7 @@ func TestAppend_SilentOnPermissionError(t *testing.T) {
 	defer os.Chmod(dir, 0o700) // restore so t.TempDir cleanup works
 
 	t.Setenv("KIZUNAX_DEBUG", "")
-	ws := state.WorkspaceDir{Root: dir}
+	ws := state.NewWorkspaceDir(dir)
 
 	// Capture stderr to ensure nothing leaks.
 	origStderr := os.Stderr

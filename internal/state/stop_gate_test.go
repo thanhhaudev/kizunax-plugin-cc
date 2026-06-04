@@ -10,7 +10,7 @@ import (
 
 func TestStopGateState_RoundTrip(t *testing.T) {
 	tmp := t.TempDir()
-	ws := WorkspaceDir{Root: tmp}
+	ws := NewWorkspaceDir(tmp)
 
 	want := StopGateState{
 		Enabled:            true,
@@ -53,7 +53,7 @@ func TestStopGateState_RoundTrip(t *testing.T) {
 
 func TestStopGateState_MissingFileTreatedAsDisabled(t *testing.T) {
 	tmp := t.TempDir()
-	ws := WorkspaceDir{Root: tmp}
+	ws := NewWorkspaceDir(tmp)
 
 	got, err := LoadStopGate(ws)
 	if err != nil {
@@ -66,7 +66,7 @@ func TestStopGateState_MissingFileTreatedAsDisabled(t *testing.T) {
 
 func TestStopGateState_CorruptFileTreatedAsDisabled(t *testing.T) {
 	tmp := t.TempDir()
-	ws := WorkspaceDir{Root: tmp}
+	ws := NewWorkspaceDir(tmp)
 
 	if err := os.WriteFile(ws.StopGatePath(), []byte("{not json"), 0o600); err != nil {
 		t.Fatal(err)
@@ -83,7 +83,7 @@ func TestStopGateState_CorruptFileTreatedAsDisabled(t *testing.T) {
 
 func TestStopGateState_AtomicWrite(t *testing.T) {
 	tmp := t.TempDir()
-	ws := WorkspaceDir{Root: tmp}
+	ws := NewWorkspaceDir(tmp)
 
 	want := StopGateState{Enabled: true, LastRunAt: time.Now().UTC()}
 	if err := SaveStopGate(ws, want); err != nil {

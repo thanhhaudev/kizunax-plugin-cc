@@ -53,7 +53,7 @@ func TestNewID_Sortable(t *testing.T) {
 
 func TestSaveLoad_RoundTrip(t *testing.T) {
 	dir := t.TempDir()
-	ws := state.WorkspaceDir{Root: dir}
+	ws := state.NewWorkspaceDir(dir)
 	if err := makeJobsDir(ws); err != nil {
 		t.Fatalf("setup: %v", err)
 	}
@@ -87,7 +87,7 @@ func TestSaveLoad_RoundTrip(t *testing.T) {
 
 func TestList_NewestFirst(t *testing.T) {
 	dir := t.TempDir()
-	ws := state.WorkspaceDir{Root: dir}
+	ws := state.NewWorkspaceDir(dir)
 	_ = makeJobsDir(ws)
 
 	older := Job{

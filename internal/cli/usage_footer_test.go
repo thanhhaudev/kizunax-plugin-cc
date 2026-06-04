@@ -17,7 +17,7 @@ import (
 func makeWS(t *testing.T) state.WorkspaceDir {
 	t.Helper()
 	tmp := t.TempDir()
-	ws := state.WorkspaceDir{Root: tmp}
+	ws := state.NewWorkspaceDir(tmp)
 	if err := os.MkdirAll(ws.JobsDir(), 0o700); err != nil {
 		t.Fatal(err)
 	}
@@ -118,7 +118,7 @@ func TestAppendUsageFooter_FreshLow(t *testing.T) {
 // test fails fast.
 func TestAppendUsageFooterIfNotQuiet_LowQuotaSnapshotProducesWarning(t *testing.T) {
 	tmp := t.TempDir()
-	ws := state.WorkspaceDir{Root: tmp}
+	ws := state.NewWorkspaceDir(tmp)
 	if err := os.MkdirAll(ws.JobsDir(), 0o700); err != nil {
 		t.Fatal(err)
 	}

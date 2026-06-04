@@ -18,7 +18,7 @@ func TestRefreshAsync_PopulatesCache(t *testing.T) {
 	defer srv.Close()
 
 	tmp := t.TempDir()
-	ws := state.WorkspaceDir{Root: tmp}
+	ws := state.NewWorkspaceDir(tmp)
 	if err := os.MkdirAll(ws.JobsDir(), 0o700); err != nil {
 		t.Fatal(err)
 	}
@@ -45,7 +45,7 @@ func TestRefreshAsync_ContextCancelled(t *testing.T) {
 	defer srv.Close()
 
 	tmp := t.TempDir()
-	ws := state.WorkspaceDir{Root: tmp}
+	ws := state.NewWorkspaceDir(tmp)
 	if err := os.MkdirAll(ws.JobsDir(), 0o700); err != nil {
 		t.Fatal(err)
 	}
@@ -77,7 +77,7 @@ func TestRefreshAsyncWithClient_DoneCallbackBlocksUntilCacheWritten(t *testing.T
 	defer srv.Close()
 
 	tmp := t.TempDir()
-	ws := state.WorkspaceDir{Root: tmp}
+	ws := state.NewWorkspaceDir(tmp)
 	if err := os.MkdirAll(ws.JobsDir(), 0o700); err != nil {
 		t.Fatal(err)
 	}
@@ -110,7 +110,7 @@ func TestRefreshAsyncWithClient_DoneCallbackBlocksUntilCacheWritten(t *testing.T
 
 func TestRefreshAndWait_EmptyKeyNoop(t *testing.T) {
 	tmp := t.TempDir()
-	ws := state.WorkspaceDir{Root: tmp}
+	ws := state.NewWorkspaceDir(tmp)
 	if err := os.MkdirAll(ws.JobsDir(), 0o700); err != nil {
 		t.Fatal(err)
 	}
