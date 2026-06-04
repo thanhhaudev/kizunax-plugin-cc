@@ -13,7 +13,7 @@ import (
 	"github.com/thanhhaudev/kizunax-plugin-cc/pkg/glossary"
 	"github.com/thanhhaudev/kizunax-plugin-cc/internal/job"
 	"github.com/thanhhaudev/kizunax-plugin-cc/internal/prompt"
-	"github.com/thanhhaudev/kizunax-plugin-cc/internal/render"
+	"github.com/thanhhaudev/kizunax-plugin-cc/pkg/render"
 	"github.com/thanhhaudev/kizunax-plugin-cc/internal/runner"
 	"github.com/thanhhaudev/kizunax-plugin-cc/internal/state"
 	"github.com/thanhhaudev/kizunax-plugin-cc/internal/usage"
