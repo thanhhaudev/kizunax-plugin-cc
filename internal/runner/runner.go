@@ -4,8 +4,11 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
+	"time"
 
+	"github.com/thanhhaudev/kizunax-plugin-cc/internal/bundlelog"
 	"github.com/thanhhaudev/kizunax-plugin-cc/internal/config"
 	"github.com/thanhhaudev/kizunax-plugin-cc/internal/diff"
 	xerrors "github.com/thanhhaudev/kizunax-plugin-cc/internal/errors"
@@ -98,10 +101,10 @@ func Run(ctx context.Context, pluginRoot string, p provider.Provider, bundle dif
 				fmt.Fprintf(os.Stderr, "[warn] %s\n", w)
 			}
 		}
-		// TODO(v0.12.4 Task 10): replace with bundlelog.Append(opts.WorkspaceDir,
-		// assembleBundleLogEntry(bundle, diffPaths, attachRes, stats, opts.WorkspaceDir))
-		// when bundlelog.Enabled(). diffPaths + attachRes + stats are all already
-		// in scope from above.
+		if bundlelog.Enabled() {
+			entry := assembleBundleLogEntry(bundle, diffPaths, attachRes, stats, opts.WorkspaceDir)
+			bundlelog.Append(opts.WorkspaceDir, entry)
+		}
 	}
 
 	pr, err := prompt.Build(pluginRoot, opts.Mode, bundle, schemaJSON, opts.Focus, opts.Glossary)
@@ -253,4 +256,60 @@ func humanBytes(n int) string {
 		return fmt.Sprintf("%.0fKB", kb)
 	}
 	return fmt.Sprintf("%.1fKB", kb)
+}
+
+// assembleBundleLogEntry builds the per-review bundlelog.Entry from current
+// pipeline state. Reason inference (priority):
+//  1. Paths in bundle.Diff → "diff_file"
+//  2. Paths in bundle.Untracked → "untracked_text"
+//  3. attachRes.Files already carries Reason="def_match:<csv>" from attach.go
+//
+// Workspace identifier = basename of ws.Root (e.g. "kizunax-plugin-cc-a1b2c3").
+func assembleBundleLogEntry(
+	bundle diff.Bundle,
+	diffPaths []string,
+	attachRes diff.AttachResult,
+	stats resolver.ResolveStats,
+	ws state.WorkspaceDir,
+) bundlelog.Entry {
+	bundleList := make([]diff.ReferencedFileLogEntry, 0, len(diffPaths)+len(bundle.Untracked)+len(attachRes.Files))
+
+	// Diff files — bytes ≈ len of their hunks would require parsing; use 0 as
+	// "not measured" sentinel. Stats.UsedBytes covers attach side already.
+	for _, p := range diffPaths {
+		bundleList = append(bundleList, diff.ReferencedFileLogEntry{
+			Path:   p,
+			Reason: "diff_file",
+			Bytes:  0,
+		})
+	}
+	for _, u := range bundle.Untracked {
+		bundleList = append(bundleList, diff.ReferencedFileLogEntry{
+			Path:   u.Path,
+			Reason: "untracked_text",
+			Bytes:  u.Bytes,
+		})
+	}
+	bundleList = append(bundleList, attachRes.Files...)
+
+	wsLabel := ""
+	if ws.Root != "" {
+		wsLabel = filepath.Base(ws.Root)
+	}
+
+	return bundlelog.Entry{
+		Timestamp: time.Now().UTC().Format(time.RFC3339),
+		Workspace: wsLabel,
+		DiffFiles: len(diffPaths),
+		Bundle:    bundleList,
+		Stats: bundlelog.Stats{
+			Extracted:   stats.ExtractedCount,
+			Filtered:    stats.FilteredCount,
+			Resolved:    stats.ResolvedCount,
+			Attached:    attachRes.Attached,
+			Dropped:     attachRes.Dropped,
+			BudgetBytes: attachRes.BudgetBytes,
+			UsedBytes:   attachRes.UsedBytes,
+		},
+	}
 }
