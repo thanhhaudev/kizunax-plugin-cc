@@ -62,3 +62,46 @@ func TestIsStdlibSymbol_UnknownExtensionFailsOpen(t *testing.T) {
 		t.Fatalf("unknown ext should fail-open (return false)")
 	}
 }
+
+func TestIsStdlibSymbol_Python_v0_12_3_Adds(t *testing.T) {
+	// New stdlib pkg entries shipped in v0.12.3.
+	stdlibAdds := []string{
+		"argparse", "tempfile", "shutil", "pickle", "hashlib",
+		"base64", "random", "math", "decimal", "weakref", "copy",
+	}
+	// New third-party pkg entries (frequently emitted by AST extraction).
+	thirdPartyAdds := []string{
+		"flask", "django", "requests", "numpy", "pandas",
+		"sqlalchemy", "pydantic", "fastapi", "starlette", "redis", "celery",
+	}
+	for _, name := range append(stdlibAdds, thirdPartyAdds...) {
+		sym := symbols.Symbol{Name: name, Kind: symbols.SymImport, File: "main.py"}
+		if !IsStdlibSymbol(sym) {
+			t.Errorf("expected Python pkg %q to be filtered as stdlib", name)
+		}
+		// Also test Pkg-keyed: e.g. a call to sqlalchemy.Session
+		sym2 := symbols.Symbol{Name: "anything", Pkg: name, Kind: symbols.SymCall, File: "main.py"}
+		if !IsStdlibSymbol(sym2) {
+			t.Errorf("expected Python Pkg=%q to be filtered as stdlib", name)
+		}
+	}
+}
+
+func TestIsStdlibSymbol_PHP(t *testing.T) {
+	cases := []struct {
+		sym  symbols.Symbol
+		want bool
+	}{
+		{symbols.Symbol{Name: "Symfony", Kind: symbols.SymImport, File: "src/Order.php"}, true},
+		{symbols.Symbol{Name: "Laravel", Kind: symbols.SymImport, File: "src/Order.php"}, true},
+		{symbols.Symbol{Pkg: "Doctrine", Name: "EntityManager", Kind: symbols.SymCall, File: "src/Order.php"}, true},
+		{symbols.Symbol{Pkg: "GuzzleHttp", Name: "Client", Kind: symbols.SymCall, File: "src/Order.php"}, true},
+		{symbols.Symbol{Pkg: "App", Name: "OrderService", Kind: symbols.SymCall, File: "src/Order.php"}, false},
+		{symbols.Symbol{Name: "OrderService", File: "src/Order.php"}, false}, // no pkg, no import → false
+	}
+	for _, c := range cases {
+		if got := IsStdlibSymbol(c.sym); got != c.want {
+			t.Errorf("sym=%+v: got %v want %v", c.sym, got, c.want)
+		}
+	}
+}

@@ -37,6 +37,7 @@ var goStdlibPkgs = map[string]bool{
 }
 
 var pythonStdlibPkgs = map[string]bool{
+	// Stdlib.
 	"os": true, "sys": true, "io": true, "json": true, "yaml": true,
 	"re": true, "typing": true, "collections": true, "itertools": true,
 	"functools": true, "datetime": true, "time": true, "uuid": true,
@@ -45,6 +46,15 @@ var pythonStdlibPkgs = map[string]bool{
 	"http": true, "urllib": true, "socket": true,
 	"unittest": true, "pytest": true,
 	"abc": true, "dataclasses": true, "enum": true,
+	// v0.12.3 stdlib adds.
+	"argparse": true, "tempfile": true, "shutil": true, "pickle": true,
+	"hashlib": true, "base64": true, "random": true, "math": true,
+	"decimal": true, "weakref": true, "copy": true,
+	// v0.12.3 third-party adds (frequently emitted by AST extraction
+	// as Pkg= via the decorator method-qualifier branch).
+	"flask": true, "django": true, "requests": true, "numpy": true,
+	"pandas": true, "sqlalchemy": true, "pydantic": true,
+	"fastapi": true, "starlette": true, "redis": true, "celery": true,
 }
 
 var tsStdlibPkgs = map[string]bool{
@@ -53,6 +63,18 @@ var tsStdlibPkgs = map[string]bool{
 	"stream": true, "events": true, "buffer": true, "child_process": true,
 	"process": true, "console": true,
 	"react": true, "vue": true, "@angular/core": true, // common framework imports
+}
+
+// PHP vendor namespaces (Symfony/Laravel/Doctrine etc.) and PSR roots.
+// Match on the top-level namespace component — kizunax emits namespaced
+// calls with Pkg containing the leading segment (e.g. Pkg="Symfony" for
+// Symfony\Component\HttpFoundation\Request) and SymImport-by-name for
+// `use Symfony\...` statements.
+var phpStdlibPkgs = map[string]bool{
+	"Symfony": true, "Laravel": true, "Illuminate": true,
+	"Doctrine": true, "Psr": true, "Monolog": true,
+	"PHPUnit": true, "Twig": true, "Carbon": true,
+	"Guzzle": true, "GuzzleHttp": true,
 }
 
 // IsStdlibSymbol returns true if sym refers to a known stdlib package
@@ -70,6 +92,8 @@ func IsStdlibSymbol(sym symbols.Symbol) bool {
 		pkgs = pythonStdlibPkgs
 	case ".ts", ".tsx", ".js", ".jsx", ".mjs":
 		pkgs = tsStdlibPkgs
+	case ".php":
+		pkgs = phpStdlibPkgs
 	default:
 		return false
 	}
