@@ -325,4 +325,4 @@ fi
 echo
 echo "Next steps:"
 echo "  1. Restart Claude Code if it is running."
-echo "  2. Run /kizunax:setup to configure provider, model, and API key."
+echo "  2. Run ./setup.sh (or /kizunax:setup inside Claude Code) to configure provider, model, and API key."
