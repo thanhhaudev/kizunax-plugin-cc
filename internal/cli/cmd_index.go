@@ -11,7 +11,7 @@ import (
 	"time"
 
 	xerrors "github.com/thanhhaudev/kizunax-plugin-cc/pkg/errors"
-	"github.com/thanhhaudev/kizunax-plugin-cc/internal/index"
+	"github.com/thanhhaudev/kizunax-plugin-cc/pkg/index"
 	"github.com/thanhhaudev/kizunax-plugin-cc/internal/state"
 )
 

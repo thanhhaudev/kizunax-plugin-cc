@@ -15,7 +15,7 @@ import (
 	"github.com/thanhhaudev/kizunax-plugin-cc/pkg/diff"
 	xerrors "github.com/thanhhaudev/kizunax-plugin-cc/pkg/errors"
 	"github.com/thanhhaudev/kizunax-plugin-cc/internal/helper"
-	"github.com/thanhhaudev/kizunax-plugin-cc/internal/index"
+	"github.com/thanhhaudev/kizunax-plugin-cc/pkg/index"
 	"github.com/thanhhaudev/kizunax-plugin-cc/pkg/prompt"
 	"github.com/thanhhaudev/kizunax-plugin-cc/pkg/provider"
 	"github.com/thanhhaudev/kizunax-plugin-cc/pkg/resolver"
