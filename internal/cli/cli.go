@@ -37,6 +37,8 @@ func Dispatch(args []string) error {
 		return runUsage(args[1:])
 	case "grammars":
 		return runGrammars(args[1:])
+	case "index":
+		return runIndex(args[1:])
 	case "version", "--version", "-v":
 		fmt.Printf("kizunax %s\n", Version)
 		return nil
