@@ -21,6 +21,17 @@ type Reference struct {
 	Excerpt string // snippet around match (≤ maxExcerptBytes)
 }
 
+// ResolveStats is the v0.12.4 dual-metric return shape. Refs preserves the
+// pre-v0.12.4 semantics (workspace matches, sorted, capped per symbol).
+// The three counts surface where symbols are lost between scanner and
+// resolver, so v0.13 direction can be decided from evidence.
+type ResolveStats struct {
+	Refs           []Reference // unchanged: workspace matches
+	ExtractedCount int         // len(input syms) — what scanner gave us
+	FilteredCount  int         // after stdlib + empty-name filter — symbols actually scanned
+	ResolvedCount  int         // distinct symbol names with ≥1 workspace match (NOT len(Refs))
+}
+
 // FindReferences walks the workspace breadth-first from the directories
 // containing diffFiles outward, searching for definitions of the given
 // symbols. Stops per-symbol after maxRefsPerSymbol matches. Skips
@@ -28,7 +39,7 @@ type Reference struct {
 // (Tier 0 matches first, then Tier 1, then Tier 2).
 //
 // Errors during walk are logged to stderr but do not fail the call —
-// partial results are returned. Returns (nil, err) only on catastrophic
+// partial results are returned. Returns (stats, err) only on catastrophic
 // failure where no work could be done at all.
 func FindReferences(
 	syms []symbols.Symbol,
@@ -36,12 +47,13 @@ func FindReferences(
 	diffFiles []string,
 	maxRefsPerSymbol int,
 	maxExcerptBytes int,
-) ([]Reference, error) {
+) (ResolveStats, error) {
+	stats := ResolveStats{ExtractedCount: len(syms)}
 	if len(syms) == 0 {
-		return nil, nil
+		return stats, nil
 	}
 
-	// Filter stdlib first.
+	// Filter stdlib + empty names first; FilteredCount = what survives.
 	work := make([]symbols.Symbol, 0, len(syms))
 	for _, s := range syms {
 		if IsStdlibSymbol(s) {
@@ -52,8 +64,9 @@ func FindReferences(
 		}
 		work = append(work, s)
 	}
+	stats.FilteredCount = len(work)
 	if len(work) == 0 {
-		return nil, nil
+		return stats, nil
 	}
 
 	// Build BFS tiers from diff file directories.
@@ -75,7 +88,7 @@ func FindReferences(
 	// Walk workspace. Collect candidate files into tiers.
 	tier0, tier1, tier2, err := collectTiers(workspaceRoot, tier0Dirs)
 	if err != nil {
-		return nil, err
+		return stats, err
 	}
 
 	matches := map[string][]Reference{} // symbolName → references
@@ -136,7 +149,9 @@ func FindReferences(
 	for _, name := range symNames {
 		out = append(out, matches[name]...)
 	}
-	return out, nil
+	stats.Refs = out
+	stats.ResolvedCount = len(matches) // distinct sym names with ≥1 match
+	return stats, nil
 }
 
 func symbolByName(syms []symbols.Symbol, name string) symbols.Symbol {

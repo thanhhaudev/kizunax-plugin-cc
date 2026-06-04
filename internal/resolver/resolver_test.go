@@ -16,10 +16,11 @@ func Authenticate(id int) error { return nil }
 	syms := []symbols.Symbol{
 		{Name: "Authenticate", Kind: symbols.SymCall, File: "main.go"},
 	}
-	refs, err := FindReferences(syms, ws, []string{"main.go"}, 5, 8192)
+	stats, err := FindReferences(syms, ws, []string{"main.go"}, 5, 8192)
 	if err != nil {
 		t.Fatalf("err: %v", err)
 	}
+	refs := stats.Refs
 	if len(refs) != 1 {
 		t.Fatalf("expected 1 reference, got %d (%+v)", len(refs), refs)
 	}
@@ -39,7 +40,8 @@ func TestFindReferences_SkipsStdlibSymbol(t *testing.T) {
 		// this is a Go symbol (and `path` is the Go stdlib package).
 		{Pkg: "path", Name: "Base", Kind: symbols.SymCall, File: "main.go"},
 	}
-	refs, _ := FindReferences(syms, ws, []string{"main.go"}, 5, 8192)
+	stats, _ := FindReferences(syms, ws, []string{"main.go"}, 5, 8192)
+	refs := stats.Refs
 	// path.Base is stdlib → should NOT be resolved (skip), even if a local
 	// func Base exists in the workspace.
 	if len(refs) != 0 {
@@ -56,7 +58,8 @@ func TestFindReferences_CapPerSymbol(t *testing.T) {
 		)
 	}
 	syms := []symbols.Symbol{{Name: "Common", Kind: symbols.SymCall}}
-	refs, _ := FindReferences(syms, ws, []string{"main.go"}, 5, 8192)
+	stats, _ := FindReferences(syms, ws, []string{"main.go"}, 5, 8192)
+	refs := stats.Refs
 	if len(refs) > 5 {
 		t.Fatalf("expected ≤5 refs (cap), got %d", len(refs))
 	}
@@ -73,7 +76,8 @@ func TestFindReferences_ExcerptCappedBytes(t *testing.T) {
 	big += "}\n"
 	mustWrite(t, filepath.Join(ws, "big.go"), big)
 	syms := []symbols.Symbol{{Name: "Big", Kind: symbols.SymCall}}
-	refs, _ := FindReferences(syms, ws, []string{"main.go"}, 5, 512)
+	stats, _ := FindReferences(syms, ws, []string{"main.go"}, 5, 512)
+	refs := stats.Refs
 	if len(refs) != 1 {
 		t.Fatalf("expected 1 ref, got %d", len(refs))
 	}
@@ -92,19 +96,43 @@ func TestFindReferences_SkipsForbiddenDirs(t *testing.T) {
 	}
 	must("node_modules/foo/bar.go", "package x\nfunc Hidden() {}\n")
 	syms := []symbols.Symbol{{Name: "Hidden", Kind: symbols.SymCall}}
-	refs, _ := FindReferences(syms, ws, []string{"main.go"}, 5, 8192)
+	stats, _ := FindReferences(syms, ws, []string{"main.go"}, 5, 8192)
+	refs := stats.Refs
 	if len(refs) != 0 {
 		t.Fatalf("node_modules must be skipped; got refs: %+v", refs)
 	}
 }
 
 func TestFindReferences_EmptySymbolListReturnsEmpty(t *testing.T) {
-	refs, err := FindReferences(nil, t.TempDir(), nil, 5, 8192)
+	stats, err := FindReferences(nil, t.TempDir(), nil, 5, 8192)
 	if err != nil {
 		t.Fatalf("err: %v", err)
 	}
-	if len(refs) != 0 {
-		t.Fatalf("expected empty refs, got %+v", refs)
+	if len(stats.Refs) != 0 {
+		t.Fatalf("expected empty refs, got %+v", stats.Refs)
+	}
+}
+
+func TestFindReferences_StatsTracksExtractedAndFiltered(t *testing.T) {
+	ws := t.TempDir()
+	mustWrite(t, filepath.Join(ws, "x.go"), "package x\nfunc Real() {}\n")
+	syms := []symbols.Symbol{
+		// 1 stdlib (filtered out)
+		{Pkg: "path", Name: "Base", Kind: symbols.SymCall, File: "main.go"},
+		// 1 empty name (filtered out)
+		{Name: "", Kind: symbols.SymCall, File: "main.go"},
+		// 1 real (passes filter)
+		{Name: "Real", Kind: symbols.SymCall, File: "main.go"},
+	}
+	stats, err := FindReferences(syms, ws, []string{"main.go"}, 5, 8192)
+	if err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if stats.ExtractedCount != 3 {
+		t.Fatalf("ExtractedCount: want 3, got %d", stats.ExtractedCount)
+	}
+	if stats.FilteredCount != 1 {
+		t.Fatalf("FilteredCount: want 1 (after stdlib+empty filter), got %d", stats.FilteredCount)
 	}
 }
 
