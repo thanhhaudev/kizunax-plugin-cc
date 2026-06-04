@@ -102,7 +102,7 @@ func Run(ctx context.Context, pluginRoot string, p provider.Provider, bundle dif
 			}
 		}
 		if bundlelog.Enabled() {
-			entry := assembleBundleLogEntry(bundle, diffPaths, attachRes, stats, opts.WorkspaceDir)
+			entry := assembleBundleLogEntry(bundle, attachRes, stats, opts.WorkspaceDir)
 			bundlelog.Append(opts.WorkspaceDir, entry)
 		}
 	}
@@ -260,23 +260,28 @@ func humanBytes(n int) string {
 
 // assembleBundleLogEntry builds the per-review bundlelog.Entry from current
 // pipeline state. Reason inference (priority):
-//  1. Paths in bundle.Diff → "diff_file"
+//  1. Paths in bundle.Diff (diff headers only, NOT untracked) → "diff_file"
 //  2. Paths in bundle.Untracked → "untracked_text"
 //  3. attachRes.Files already carries Reason="def_match:<csv>" from attach.go
+//
+// Using diff.DiffOnlyPaths (not diff.Paths) for the diff_file loop is
+// deliberate: diff.Paths includes untracked files for canonicalization, but
+// here we want them to surface only once under "untracked_text" with real
+// Bytes, not twice with conflicting reasons.
 //
 // Workspace identifier = basename of ws.Root (e.g. "kizunax-plugin-cc-a1b2c3").
 func assembleBundleLogEntry(
 	bundle diff.Bundle,
-	diffPaths []string,
 	attachRes diff.AttachResult,
 	stats resolver.ResolveStats,
 	ws state.WorkspaceDir,
 ) bundlelog.Entry {
-	bundleList := make([]diff.ReferencedFileLogEntry, 0, len(diffPaths)+len(bundle.Untracked)+len(attachRes.Files))
+	diffOnlyPaths := diff.DiffOnlyPaths(bundle)
+	bundleList := make([]diff.ReferencedFileLogEntry, 0, len(diffOnlyPaths)+len(bundle.Untracked)+len(attachRes.Files))
 
 	// Diff files — bytes ≈ len of their hunks would require parsing; use 0 as
 	// "not measured" sentinel. Stats.UsedBytes covers attach side already.
-	for _, p := range diffPaths {
+	for _, p := range diffOnlyPaths {
 		bundleList = append(bundleList, diff.ReferencedFileLogEntry{
 			Path:   p,
 			Reason: "diff_file",
@@ -300,7 +305,7 @@ func assembleBundleLogEntry(
 	return bundlelog.Entry{
 		Timestamp: time.Now().UTC().Format(time.RFC3339),
 		Workspace: wsLabel,
-		DiffFiles: len(diffPaths),
+		DiffFiles: len(diffOnlyPaths),
 		Bundle:    bundleList,
 		Stats: bundlelog.Stats{
 			Extracted:   stats.ExtractedCount,

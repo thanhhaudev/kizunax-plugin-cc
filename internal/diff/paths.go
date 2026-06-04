@@ -42,3 +42,30 @@ func Paths(b Bundle) []string {
 	sort.Strings(out)
 	return out
 }
+
+// DiffOnlyPaths returns the sorted, deduped set of paths that appear in the
+// unified diff (`+++ b/<path>` headers only), excluding any untracked-file
+// paths in b.Untracked. Used by bundlelog assembly so that an untracked file
+// is logged once with reason="untracked_text" and not also as "diff_file".
+//
+// `/dev/null` (deletion marker) is skipped.
+func DiffOnlyPaths(b Bundle) []string {
+	set := map[string]struct{}{}
+	for _, line := range strings.Split(b.Diff, "\n") {
+		if !strings.HasPrefix(line, "+++ b/") {
+			continue
+		}
+		p := strings.TrimPrefix(line, "+++ b/")
+		p = strings.TrimRight(p, " \t\r")
+		if p == "" || p == "/dev/null" {
+			continue
+		}
+		set[p] = struct{}{}
+	}
+	out := make([]string, 0, len(set))
+	for p := range set {
+		out = append(out, p)
+	}
+	sort.Strings(out)
+	return out
+}
