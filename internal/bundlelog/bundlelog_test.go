@@ -136,3 +136,32 @@ func TestAppend_RotatesAtSizeCap(t *testing.T) {
 		t.Fatalf("new log too big — rotation did not truncate (got %d bytes)", len(nData))
 	}
 }
+
+func TestAppend_SilentOnPermissionError(t *testing.T) {
+	// Create workspace dir, then chmod it 0500 (no write) so Append cannot
+	// create the log file. Must not panic, must not write to stderr (unless
+	// KIZUNAX_DEBUG=1, which we keep unset).
+	dir := t.TempDir()
+	if err := os.Chmod(dir, 0o500); err != nil {
+		t.Skipf("chmod not supported on this filesystem: %v", err)
+	}
+	defer os.Chmod(dir, 0o700) // restore so t.TempDir cleanup works
+
+	t.Setenv("KIZUNAX_DEBUG", "")
+	ws := state.WorkspaceDir{Root: dir}
+
+	// Capture stderr to ensure nothing leaks.
+	origStderr := os.Stderr
+	r, w, _ := os.Pipe()
+	os.Stderr = w
+
+	Append(ws, Entry{Timestamp: "2026-06-04T10:00:00Z"})
+
+	w.Close()
+	os.Stderr = origStderr
+	captured := make([]byte, 4096)
+	n, _ := r.Read(captured)
+	if n > 0 {
+		t.Fatalf("stderr leaked %d bytes: %q", n, captured[:n])
+	}
+}
