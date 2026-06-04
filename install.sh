@@ -298,6 +298,23 @@ patch_settings
 
 trap - ERR INT TERM
 
+maybe_run_setup() {
+  [ "$RUN_SETUP" = "1" ] || return 0
+  if [ ! -t 0 ]; then
+    info "Non-interactive shell — skipping setup wizard. Run ./setup.sh when ready."
+    return 0
+  fi
+
+  printf "Run setup wizard now to configure provider + API key? [Y/n] "
+  local answer
+  read -r answer
+  case "$answer" in
+    n|N|no|NO) info "Skipped. Run ./setup.sh later." ;;
+    *) "$REPO_DIR/setup.sh" ;;
+  esac
+}
+maybe_run_setup
+
 echo
 echo "Kizunax v$VERSION installed."
 echo "  Binary:   $BINARY"
