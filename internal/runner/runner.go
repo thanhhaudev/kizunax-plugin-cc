@@ -8,7 +8,6 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
-	"syscall"
 	"time"
 
 	"github.com/thanhhaudev/kizunax-plugin-cc/internal/bundlelog"
@@ -350,17 +349,18 @@ func loadIndexForReview(ws state.WorkspaceDir, workspaceRoot string, force bool)
 }
 
 // spawnBackgroundIndexSync exec's `kizunax index sync` detached. The
-// subprocess survives the parent runner.Run exiting (Setpgid only — NOT
-// Setsid, which fails under the Claude Code sandbox on macOS per
-// CLAUDE.md). All output suppressed. Best-effort: any error is swallowed
-// because the current review already has its v1 fallback running.
+// subprocess survives the parent runner.Run exiting. On Unix it gets its
+// own process group (Setpgid — see spawn_unix.go) so the parent's SIGINT
+// does not propagate; on Windows the default CreateProcess flags already
+// detach the child. Output is discarded. Best-effort: any error is
+// swallowed because the current review already has its v1 fallback.
 func spawnBackgroundIndexSync() {
 	exe, err := os.Executable()
 	if err != nil {
 		return
 	}
 	cmd := exec.Command(exe, "index", "sync")
-	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	cmd.SysProcAttr = detachSysProcAttr()
 	cmd.Stdout = io.Discard
 	cmd.Stderr = io.Discard
 	cmd.Stdin = nil
