@@ -10,7 +10,7 @@ import (
 	"github.com/thanhhaudev/kizunax-plugin-cc/internal/diff"
 	xerrors "github.com/thanhhaudev/kizunax-plugin-cc/pkg/errors"
 	"github.com/thanhhaudev/kizunax-plugin-cc/internal/git"
-	"github.com/thanhhaudev/kizunax-plugin-cc/internal/glossary"
+	"github.com/thanhhaudev/kizunax-plugin-cc/pkg/glossary"
 	"github.com/thanhhaudev/kizunax-plugin-cc/internal/job"
 	"github.com/thanhhaudev/kizunax-plugin-cc/internal/prompt"
 	"github.com/thanhhaudev/kizunax-plugin-cc/internal/render"
