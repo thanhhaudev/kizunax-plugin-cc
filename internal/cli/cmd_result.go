@@ -5,11 +5,11 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/thanhhaudev/kizunax-plugin-cc/pkg/diff"
-	xerrors "github.com/thanhhaudev/kizunax-plugin-cc/pkg/errors"
+	"github.com/thanhhaudev/llmreviewkit/diff"
+	xerrors "github.com/thanhhaudev/llmreviewkit/errors"
 	"github.com/thanhhaudev/kizunax-plugin-cc/internal/job"
-	"github.com/thanhhaudev/kizunax-plugin-cc/pkg/prompt"
-	"github.com/thanhhaudev/kizunax-plugin-cc/pkg/render"
+	"github.com/thanhhaudev/llmreviewkit/prompt"
+	"github.com/thanhhaudev/llmreviewkit/render"
 	"github.com/thanhhaudev/kizunax-plugin-cc/internal/state"
 )
 

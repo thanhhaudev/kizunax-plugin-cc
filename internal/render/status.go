@@ -94,6 +94,25 @@ func RenderJobDetail(j job.Job) string {
 	return sb.String()
 }
 
+// escapeMarkdownCell returns s safe to embed in a single markdown table cell.
+// Mirrors pkg/render.escapeMarkdownCell; duplicated to avoid a cross-layer
+// import from internal/render → pkg/render.
+func escapeMarkdownCell(s string) string {
+	s = strings.ReplaceAll(s, "\r\n", " ")
+	s = strings.ReplaceAll(s, "\n", " ")
+	s = strings.ReplaceAll(s, "\t", " ")
+	var b strings.Builder
+	b.Grow(len(s))
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		if c == '|' && (i == 0 || s[i-1] != '\\') {
+			b.WriteByte('\\')
+		}
+		b.WriteByte(c)
+	}
+	return b.String()
+}
+
 func statusIcon(s job.Status) string {
 	switch s {
 	case job.StatusRunning:

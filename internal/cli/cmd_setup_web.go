@@ -20,8 +20,8 @@ import (
 	"time"
 
 	"github.com/thanhhaudev/kizunax-plugin-cc/internal/config"
-	xerrors "github.com/thanhhaudev/kizunax-plugin-cc/pkg/errors"
-	"github.com/thanhhaudev/kizunax-plugin-cc/pkg/provider"
+	xerrors "github.com/thanhhaudev/llmreviewkit/errors"
+	"github.com/thanhhaudev/llmreviewkit/provider"
 )
 
 // webIdleTimeout is how long the server waits for the user to submit before giving up.

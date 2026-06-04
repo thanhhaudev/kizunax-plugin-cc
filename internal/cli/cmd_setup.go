@@ -10,8 +10,8 @@ import (
 	"strings"
 
 	"github.com/thanhhaudev/kizunax-plugin-cc/internal/config"
-	xerrors "github.com/thanhhaudev/kizunax-plugin-cc/pkg/errors"
-	"github.com/thanhhaudev/kizunax-plugin-cc/pkg/provider"
+	xerrors "github.com/thanhhaudev/llmreviewkit/errors"
+	"github.com/thanhhaudev/llmreviewkit/provider"
 	"github.com/thanhhaudev/kizunax-plugin-cc/internal/state"
 )
 
@@ -283,9 +283,17 @@ func modeWarning(mode os.FileMode) string {
 func buildProvider(cfg config.Config) (provider.Provider, error) {
 	switch cfg.Provider {
 	case "openai", "":
-		return provider.NewOpenAI(cfg), nil
+		return provider.NewOpenAI(provider.OpenAIConfig{
+			BaseURL: cfg.BaseURL,
+			APIKey:  cfg.APIKey,
+			Model:   cfg.Model,
+		}), nil
 	case "anthropic":
-		return provider.NewAnthropic(cfg), nil
+		return provider.NewAnthropic(provider.AnthropicConfig{
+			BaseURL: cfg.BaseURL,
+			APIKey:  cfg.APIKey,
+			Model:   cfg.Model,
+		}), nil
 	}
 	return nil, xerrors.User("unknown_provider",
 		fmt.Sprintf("provider %q is not supported", cfg.Provider),

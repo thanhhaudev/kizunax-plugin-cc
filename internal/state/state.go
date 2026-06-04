@@ -5,7 +5,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/thanhhaudev/kizunax-plugin-cc/pkg/statedir"
+	"github.com/thanhhaudev/llmreviewkit/statedir"
 )
 
 // WorkspaceDir is the kizunax-flavored per-workspace state directory.

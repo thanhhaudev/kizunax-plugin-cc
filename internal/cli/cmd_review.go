@@ -9,17 +9,17 @@ import (
 	"time"
 
 	"github.com/thanhhaudev/kizunax-plugin-cc/internal/config"
-	"github.com/thanhhaudev/kizunax-plugin-cc/pkg/diff"
-	xerrors "github.com/thanhhaudev/kizunax-plugin-cc/pkg/errors"
-	"github.com/thanhhaudev/kizunax-plugin-cc/pkg/git"
-	"github.com/thanhhaudev/kizunax-plugin-cc/pkg/glossary"
+	"github.com/thanhhaudev/llmreviewkit/diff"
+	xerrors "github.com/thanhhaudev/llmreviewkit/errors"
+	"github.com/thanhhaudev/llmreviewkit/git"
+	"github.com/thanhhaudev/llmreviewkit/glossary"
 	"github.com/thanhhaudev/kizunax-plugin-cc/internal/job"
-	"github.com/thanhhaudev/kizunax-plugin-cc/pkg/prompt"
-	"github.com/thanhhaudev/kizunax-plugin-cc/pkg/render"
+	"github.com/thanhhaudev/llmreviewkit/prompt"
+	"github.com/thanhhaudev/llmreviewkit/render"
 	"github.com/thanhhaudev/kizunax-plugin-cc/internal/runner"
 	"github.com/thanhhaudev/kizunax-plugin-cc/internal/state"
 	"github.com/thanhhaudev/kizunax-plugin-cc/internal/usage"
-	"github.com/thanhhaudev/kizunax-plugin-cc/pkg/bundlelog"
+	"github.com/thanhhaudev/llmreviewkit/bundlelog"
 )
 
 // kindFromMode maps a prompt mode to the corresponding job.Kind.
