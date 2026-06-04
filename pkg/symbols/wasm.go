@@ -11,7 +11,7 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/thanhhaudev/kizunax-plugin-cc/internal/symbols/treesitter"
+	"github.com/thanhhaudev/kizunax-plugin-cc/pkg/symbols/treesitter"
 )
 
 //go:embed all:grammars

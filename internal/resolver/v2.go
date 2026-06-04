@@ -7,7 +7,7 @@ import (
 	"strings"
 
 	"github.com/thanhhaudev/kizunax-plugin-cc/internal/index"
-	"github.com/thanhhaudev/kizunax-plugin-cc/internal/symbols"
+	"github.com/thanhhaudev/kizunax-plugin-cc/pkg/symbols"
 )
 
 // ResolveStatsV2 extends ResolveStats with index-specific metrics.

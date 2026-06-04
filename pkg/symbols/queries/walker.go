@@ -8,8 +8,8 @@ package queries
 import (
 	"strings"
 
-	"github.com/thanhhaudev/kizunax-plugin-cc/internal/symbols"
-	"github.com/thanhhaudev/kizunax-plugin-cc/internal/symbols/treesitter"
+	"github.com/thanhhaudev/kizunax-plugin-cc/pkg/symbols"
+	"github.com/thanhhaudev/kizunax-plugin-cc/pkg/symbols/treesitter"
 )
 
 // CaptureToSymbol translates a single Capture to a Symbol based on the

@@ -5,7 +5,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/thanhhaudev/kizunax-plugin-cc/internal/symbols"
+	"github.com/thanhhaudev/kizunax-plugin-cc/pkg/symbols"
 )
 
 func TestFindReferences_FindsGoFunc(t *testing.T) {

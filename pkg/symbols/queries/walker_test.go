@@ -7,8 +7,8 @@ import (
 	"os"
 	"testing"
 
-	"github.com/thanhhaudev/kizunax-plugin-cc/internal/symbols"
-	"github.com/thanhhaudev/kizunax-plugin-cc/internal/symbols/treesitter"
+	"github.com/thanhhaudev/kizunax-plugin-cc/pkg/symbols"
+	"github.com/thanhhaudev/kizunax-plugin-cc/pkg/symbols/treesitter"
 )
 
 func TestCaptureToSymbol_Mapping(t *testing.T) {

@@ -21,7 +21,7 @@ import (
 	"github.com/thanhhaudev/kizunax-plugin-cc/internal/resolver"
 	"github.com/thanhhaudev/kizunax-plugin-cc/pkg/schema"
 	"github.com/thanhhaudev/kizunax-plugin-cc/internal/state"
-	"github.com/thanhhaudev/kizunax-plugin-cc/internal/symbols"
+	"github.com/thanhhaudev/kizunax-plugin-cc/pkg/symbols"
 	"github.com/thanhhaudev/kizunax-plugin-cc/internal/usage"
 )
 

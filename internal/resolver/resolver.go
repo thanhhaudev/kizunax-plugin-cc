@@ -10,7 +10,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/thanhhaudev/kizunax-plugin-cc/internal/symbols"
+	"github.com/thanhhaudev/kizunax-plugin-cc/pkg/symbols"
 )
 
 // Reference is a single match found by the resolver: a workspace file that

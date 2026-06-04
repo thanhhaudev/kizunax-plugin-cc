@@ -3,7 +3,7 @@ package resolver
 import (
 	"testing"
 
-	"github.com/thanhhaudev/kizunax-plugin-cc/internal/symbols"
+	"github.com/thanhhaudev/kizunax-plugin-cc/pkg/symbols"
 )
 
 func TestIsStdlibSymbol_Go(t *testing.T) {

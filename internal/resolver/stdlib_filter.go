@@ -3,7 +3,7 @@ package resolver
 import (
 	"path/filepath"
 
-	"github.com/thanhhaudev/kizunax-plugin-cc/internal/symbols"
+	"github.com/thanhhaudev/kizunax-plugin-cc/pkg/symbols"
 )
 
 // Hardcoded stdlib package skip lists per language. Symbols whose Pkg

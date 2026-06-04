@@ -6,7 +6,7 @@ import (
 	"testing"
 
 	"github.com/thanhhaudev/kizunax-plugin-cc/internal/index"
-	"github.com/thanhhaudev/kizunax-plugin-cc/internal/symbols"
+	"github.com/thanhhaudev/kizunax-plugin-cc/pkg/symbols"
 )
 
 func TestFindReferencesV2_HitsDefInIndex(t *testing.T) {
