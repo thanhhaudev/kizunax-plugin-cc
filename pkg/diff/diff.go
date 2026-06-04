@@ -6,7 +6,6 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/thanhhaudev/kizunax-plugin-cc/internal/config"
 	xerrors "github.com/thanhhaudev/kizunax-plugin-cc/pkg/errors"
 	"github.com/thanhhaudev/kizunax-plugin-cc/pkg/git"
 )
@@ -57,7 +56,7 @@ func Collect(cwd string, target git.Target) (Bundle, error) {
 		bundle = appendUntracked(cwd, bundle, target.Paths)
 	}
 
-	if bundle.TotalBytes > config.MaxDiffBytes {
+	if bundle.TotalBytes > MaxDiffBytes {
 		bundle = applyCap(bundle)
 	}
 
@@ -128,7 +127,7 @@ func matchesPathFilter(path string, set map[string]bool) bool {
 }
 
 func applyCap(b Bundle) Bundle {
-	for len(b.Untracked) > 0 && b.TotalBytes > config.MaxDiffBytes {
+	for len(b.Untracked) > 0 && b.TotalBytes > MaxDiffBytes {
 		idx := largestUntrackedIdx(b.Untracked)
 		dropped := b.Untracked[idx]
 		b.Untracked = append(b.Untracked[:idx], b.Untracked[idx+1:]...)
@@ -136,8 +135,8 @@ func applyCap(b Bundle) Bundle {
 		b.Truncated = append(b.Truncated, dropped.Path)
 	}
 
-	if b.TotalBytes > config.MaxDiffBytes {
-		over := b.TotalBytes - config.MaxDiffBytes
+	if b.TotalBytes > MaxDiffBytes {
+		over := b.TotalBytes - MaxDiffBytes
 		if over < len(b.Diff) {
 			b.Diff = b.Diff[:len(b.Diff)-over] + "\n[... diff truncated ...]\n"
 			b.TotalBytes = len(b.Diff)
@@ -146,7 +145,7 @@ func applyCap(b Bundle) Bundle {
 	}
 
 	b.Warnings = append(b.Warnings,
-		fmt.Sprintf("diff exceeded %d byte cap; truncated %d items", config.MaxDiffBytes, len(b.Truncated)))
+		fmt.Sprintf("diff exceeded %d byte cap; truncated %d items", MaxDiffBytes, len(b.Truncated)))
 	return b
 }
 
