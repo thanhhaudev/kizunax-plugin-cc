@@ -18,7 +18,7 @@ import (
 	"github.com/thanhhaudev/kizunax-plugin-cc/internal/index"
 	"github.com/thanhhaudev/kizunax-plugin-cc/pkg/prompt"
 	"github.com/thanhhaudev/kizunax-plugin-cc/pkg/provider"
-	"github.com/thanhhaudev/kizunax-plugin-cc/internal/resolver"
+	"github.com/thanhhaudev/kizunax-plugin-cc/pkg/resolver"
 	"github.com/thanhhaudev/kizunax-plugin-cc/pkg/schema"
 	"github.com/thanhhaudev/kizunax-plugin-cc/internal/state"
 	"github.com/thanhhaudev/kizunax-plugin-cc/pkg/symbols"
