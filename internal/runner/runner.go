@@ -13,6 +13,7 @@ import (
 	"github.com/thanhhaudev/kizunax-plugin-cc/internal/diff"
 	xerrors "github.com/thanhhaudev/kizunax-plugin-cc/internal/errors"
 	"github.com/thanhhaudev/kizunax-plugin-cc/internal/helper"
+	"github.com/thanhhaudev/kizunax-plugin-cc/internal/index"
 	"github.com/thanhhaudev/kizunax-plugin-cc/internal/prompt"
 	"github.com/thanhhaudev/kizunax-plugin-cc/internal/provider"
 	"github.com/thanhhaudev/kizunax-plugin-cc/internal/resolver"
@@ -77,14 +78,43 @@ func Run(ctx context.Context, pluginRoot string, p provider.Provider, bundle dif
 		symbols.SetWorkspaceRoot(opts.WorkspaceRoot)
 		syms := symbols.ExtractFromBundle(bundle)
 		diffPaths := diff.Paths(bundle)
-		stats, rerr := resolver.FindReferences(syms, opts.WorkspaceRoot, diffPaths, 5, 4*1024)
+
+		var (
+			stats        resolver.ResolveStats
+			rerr         error
+			indexHits    int
+			indexMisses  int
+			resolverPath = "v1"
+			usedV2       bool
+		)
+		if useIndexResolver() {
+			idx, idxErr := loadIndexForReview(opts.WorkspaceDir, opts.WorkspaceRoot)
+			if idxErr == nil && idx.Healthy() {
+				idxStats, v2Err := resolver.FindReferencesV2(syms, opts.WorkspaceRoot, idx, diffPaths, 5)
+				if v2Err == nil {
+					stats = idxStats.ToV1()
+					rerr = nil
+					indexHits = idxStats.IndexHits
+					indexMisses = idxStats.IndexMisses
+					resolverPath = "v2"
+					usedV2 = true
+				} else if opts.Verbose {
+					fmt.Fprintf(os.Stderr, "[verbose] resolver v2 failed, falling back to v1: %v\n", v2Err)
+				}
+			} else if idxErr != nil && opts.Verbose {
+				fmt.Fprintf(os.Stderr, "[verbose] index unavailable, falling back to v1: %v\n", idxErr)
+			}
+		}
+		if !usedV2 {
+			stats, rerr = resolver.FindReferences(syms, opts.WorkspaceRoot, diffPaths, 5, 4*1024)
+		}
 		if rerr != nil {
 			fmt.Fprintf(os.Stderr, "[warn] resolver: %v\n", rerr)
 		}
 		if opts.Verbose {
 			fmt.Fprintf(os.Stderr,
-				"[verbose] enrichment: scanner=%d filtered=%d resolved=%d (%d refs)\n",
-				stats.ExtractedCount, stats.FilteredCount, stats.ResolvedCount, len(stats.Refs))
+				"[verbose] enrichment: scanner=%d filtered=%d resolved=%d (%d refs) path=%s\n",
+				stats.ExtractedCount, stats.FilteredCount, stats.ResolvedCount, len(stats.Refs), resolverPath)
 		}
 
 		budget := computePromptBudget(bundle, opts.Glossary, schemaJSON)
@@ -102,7 +132,8 @@ func Run(ctx context.Context, pluginRoot string, p provider.Provider, bundle dif
 			}
 		}
 		if bundlelog.Enabled() {
-			entry := assembleBundleLogEntry(bundle, attachRes, stats, opts.WorkspaceDir)
+			entry := assembleBundleLogEntry(bundle, attachRes, stats, opts.WorkspaceDir,
+				indexHits, indexMisses, resolverPath)
 			bundlelog.Append(opts.WorkspaceDir, entry)
 		}
 	}
@@ -258,6 +289,24 @@ func humanBytes(n int) string {
 	return fmt.Sprintf("%.1fKB", kb)
 }
 
+// useIndexResolver returns true if v0.13 index-backed resolver should be
+// tried. Default false in v0.13.0 (opt-in via env). v0.13.2 flips default.
+func useIndexResolver() bool {
+	if os.Getenv("KIZUNAX_DISABLE_INDEX") == "1" {
+		return false
+	}
+	return os.Getenv("KIZUNAX_USE_INDEX") == "1"
+}
+
+// loadIndexForReview wraps index.LoadOrBuild. Review never fails due to
+// index issues — caller falls back to v1 resolver on error.
+func loadIndexForReview(ws state.WorkspaceDir, workspaceRoot string) (*index.Index, error) {
+	if ws.Root == "" || workspaceRoot == "" {
+		return nil, fmt.Errorf("empty workspace dir or root")
+	}
+	return index.LoadOrBuild(ws.Root, workspaceRoot)
+}
+
 // assembleBundleLogEntry builds the per-review bundlelog.Entry from current
 // pipeline state. Reason inference (priority):
 //  1. Paths in bundle.Diff (diff headers only, NOT untracked) → "diff_file"
@@ -275,6 +324,8 @@ func assembleBundleLogEntry(
 	attachRes diff.AttachResult,
 	stats resolver.ResolveStats,
 	ws state.WorkspaceDir,
+	indexHits, indexMisses int,
+	resolverPath string,
 ) bundlelog.Entry {
 	diffOnlyPaths := diff.DiffOnlyPaths(bundle)
 	bundleList := make([]diff.ReferencedFileLogEntry, 0, len(diffOnlyPaths)+len(bundle.Untracked)+len(attachRes.Files))
@@ -308,13 +359,16 @@ func assembleBundleLogEntry(
 		DiffFiles: len(diffOnlyPaths),
 		Bundle:    bundleList,
 		Stats: bundlelog.Stats{
-			Extracted:   stats.ExtractedCount,
-			Filtered:    stats.FilteredCount,
-			Resolved:    stats.ResolvedCount,
-			Attached:    attachRes.Attached,
-			Dropped:     attachRes.Dropped,
-			BudgetBytes: attachRes.BudgetBytes,
-			UsedBytes:   attachRes.UsedBytes,
+			Extracted:    stats.ExtractedCount,
+			Filtered:     stats.FilteredCount,
+			Resolved:     stats.ResolvedCount,
+			Attached:     attachRes.Attached,
+			Dropped:      attachRes.Dropped,
+			BudgetBytes:  attachRes.BudgetBytes,
+			UsedBytes:    attachRes.UsedBytes,
+			IndexHits:    indexHits,
+			IndexMisses:  indexMisses,
+			ResolverPath: resolverPath,
 		},
 	}
 }
