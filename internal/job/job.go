@@ -10,7 +10,7 @@ import (
 	"time"
 
 	"github.com/thanhhaudev/kizunax-plugin-cc/internal/git"
-	"github.com/thanhhaudev/kizunax-plugin-cc/internal/schema"
+	"github.com/thanhhaudev/kizunax-plugin-cc/pkg/schema"
 	"github.com/thanhhaudev/kizunax-plugin-cc/internal/state"
 )
 

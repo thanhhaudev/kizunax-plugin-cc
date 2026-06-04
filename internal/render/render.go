@@ -7,7 +7,7 @@ import (
 
 	"github.com/thanhhaudev/kizunax-plugin-cc/internal/diff"
 	"github.com/thanhhaudev/kizunax-plugin-cc/internal/prompt"
-	"github.com/thanhhaudev/kizunax-plugin-cc/internal/schema"
+	"github.com/thanhhaudev/kizunax-plugin-cc/pkg/schema"
 )
 
 func RenderReview(r schema.ReviewResult, bundle diff.Bundle, totalTokens int, mode prompt.Mode) string {

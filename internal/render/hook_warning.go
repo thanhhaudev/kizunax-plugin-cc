@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/thanhhaudev/kizunax-plugin-cc/internal/schema"
+	"github.com/thanhhaudev/kizunax-plugin-cc/pkg/schema"
 )
 
 const maxHookFindings = 5

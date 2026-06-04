@@ -13,7 +13,7 @@ import (
 	"github.com/thanhhaudev/kizunax-plugin-cc/internal/git"
 	"github.com/thanhhaudev/kizunax-plugin-cc/internal/job"
 	"github.com/thanhhaudev/kizunax-plugin-cc/internal/prompt"
-	"github.com/thanhhaudev/kizunax-plugin-cc/internal/schema"
+	"github.com/thanhhaudev/kizunax-plugin-cc/pkg/schema"
 )
 
 var updateGolden = flag.Bool("update", false, "update golden files")

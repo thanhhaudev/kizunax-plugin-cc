@@ -6,7 +6,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/thanhhaudev/kizunax-plugin-cc/internal/schema"
+	"github.com/thanhhaudev/kizunax-plugin-cc/pkg/schema"
 )
 
 // canonicalizeFindings rewrites finding.File to the full repo-relative path

@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/thanhhaudev/kizunax-plugin-cc/internal/schema"
+	"github.com/thanhhaudev/kizunax-plugin-cc/pkg/schema"
 )
 
 var updateHookGolden = flag.Bool("update-hook-golden", false, "update hook-warning golden")

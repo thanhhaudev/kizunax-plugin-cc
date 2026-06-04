@@ -11,7 +11,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/thanhhaudev/kizunax-plugin-cc/internal/config"
-	"github.com/thanhhaudev/kizunax-plugin-cc/internal/schema"
+	"github.com/thanhhaudev/kizunax-plugin-cc/pkg/schema"
 )
 
 func TestSummarize_EmptyFindings_ShortCircuit(t *testing.T) {

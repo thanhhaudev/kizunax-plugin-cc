@@ -16,7 +16,7 @@ import (
 	"github.com/thanhhaudev/kizunax-plugin-cc/internal/git"
 	"github.com/thanhhaudev/kizunax-plugin-cc/internal/prompt"
 	"github.com/thanhhaudev/kizunax-plugin-cc/internal/provider"
-	"github.com/thanhhaudev/kizunax-plugin-cc/internal/schema"
+	"github.com/thanhhaudev/kizunax-plugin-cc/pkg/schema"
 	"github.com/thanhhaudev/kizunax-plugin-cc/internal/state"
 )
 
