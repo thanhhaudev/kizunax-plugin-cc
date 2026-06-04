@@ -46,11 +46,44 @@ var (
 // getRuntime returns the process-wide tree-sitter runtime singleton.
 // First call lazily constructs the runtime; subsequent calls return
 // the cached instance (or the cached error if first call failed).
+//
+// NOTE: Singleton is preserved for test code and any caller that
+// explicitly opts in. Production extraction in internal/symbols uses
+// NewRuntime to obtain a fresh, isolated runtime per grammar — this
+// avoids dlmalloc cross-contamination between grammars (see Fix 1 in
+// v0.12.2 for the PHP-after-TS ts_query_new OOB regression).
 func getRuntime(ctx context.Context) (*Runtime, error) {
 	runtimeOnce.Do(func() {
 		runtimeInst, runtimeErr = newRuntime(ctx)
 	})
 	return runtimeInst, runtimeErr
+}
+
+// NewRuntime constructs a fresh, isolated wazero runtime with all the
+// tree-sitter modules instantiated. Each call returns a brand-new
+// runtime — no sharing with other callers. Cost: ~90 ms cold start.
+//
+// Why: web-tree-sitter 0.26.9's dlmalloc allocator state inside a single
+// wasm runtime is corrupted by ts_query_new OOB warm-up traps in a way
+// that prevents a subsequent (different) grammar from initialising. By
+// giving each grammar its own runtime we eliminate the shared dlmalloc
+// state entirely. The caller is responsible for closing the runtime
+// (Close) when finished, or for letting it leak until process exit (the
+// review process is short-lived enough that the leak is acceptable).
+func NewRuntime(ctx context.Context) (*Runtime, error) {
+	return newRuntime(ctx)
+}
+
+// Close releases the underlying wazero runtime and all its instantiated
+// modules. After Close the Runtime must not be used. Safe to call on a
+// nil receiver.
+func (r *Runtime) Close(ctx context.Context) error {
+	if r == nil || r.wazRt == nil {
+		return nil
+	}
+	err := r.wazRt.Close(ctx)
+	r.wazRt = nil
+	return err
 }
 
 func newRuntime(ctx context.Context) (*Runtime, error) {
@@ -196,39 +229,46 @@ func instantiateHostModule(ctx context.Context, rt wazero.Runtime, rfns *runtime
 		WithFunc(func(ctx context.Context, mod api.Module, inputBuf, charIndex, row, column, lenAddr int32) {
 			// Serve source text to the wasm parser as UTF-16 LE.
 			//
-			// The wasm runtime calls this via a shim (func[263]) that converts
-			// byte offsets to UTF-16 indices before calling us, so charIndex
-			// is a UTF-16 character index (== byte index for ASCII/Latin-1
-			// sources, which are the common case). The buffer must contain
-			// UTF-16 LE encoded text and lenAddr must receive the UTF-16
-			// character count (not the byte count).
+			// charIndex is a BYTE offset into the source (the wasm shim
+			// func[263] converts the parser's internal UTF-16 code-unit
+			// position to bytes before calling this trampoline).
+			//
+			// We emit ONE UTF-16 code unit per source BYTE: each byte X
+			// becomes the code unit 0x00XX (Latin-1 padding). This keeps a
+			// 1:1 source-byte ↔ code-unit mapping so the start/end indices
+			// the parser reports back can be used directly to slice src as
+			// Go bytes — no char↔byte conversion table needed.
+			//
+			// Bytes >= 0x80 are remapped to the benign ASCII letter 'a' so
+			// the PHP / Python lexer treats them as identifier filler. The
+			// 1:1 byte/code-unit position mapping is preserved — the slice
+			// we take back uses the ORIGINAL bytes from parseSrcBuf, not
+			// what the grammar saw, so symbol names remain bit-perfect.
 			parseSrcMu.Lock()
 			src := parseSrcBuf
 			parseSrcMu.Unlock()
 			if charIndex < 0 || int(charIndex) >= len(src) {
-				// Signal EOF or out-of-range.
 				mod.Memory().WriteUint32Le(uint32(lenAddr), 0)
 				return
 			}
-			// Convert to runes starting at charIndex, encode as UTF-16 LE.
-			// For ASCII/Latin-1 (the common case) this is a no-op expansion:
-			// each byte becomes a 2-byte little-endian code unit.
-			//
-			// The input buffer is 10240 bytes (allocated by ts_parser_new_wasm),
-			// so we can fit at most 10240/2 = 5120 UTF-16 code units per chunk.
-			const maxUTF16Units = 5 * 1024
-			runes := []rune(string(src[charIndex:]))
-			if len(runes) > maxUTF16Units {
-				runes = runes[:maxUTF16Units]
+			// Cap by input buffer size: 10240 bytes / 2 = 5120 code units.
+			const maxUTF16Units = 5120
+			remaining := src[charIndex:]
+			n := len(remaining)
+			if n > maxUTF16Units {
+				n = maxUTF16Units
 			}
-			utf16Bytes := make([]byte, len(runes)*2)
-			for i, r := range runes {
-				// BMP characters only (> 0xFFFF not expected in source code).
-				utf16Bytes[i*2] = byte(r)
-				utf16Bytes[i*2+1] = byte(r >> 8)
+			utf16Bytes := make([]byte, n*2)
+			for i := 0; i < n; i++ {
+				b := remaining[i]
+				if b >= 0x80 {
+					b = 'a'
+				}
+				utf16Bytes[i*2] = b
+				utf16Bytes[i*2+1] = 0
 			}
 			mod.Memory().Write(uint32(inputBuf), utf16Bytes)
-			mod.Memory().WriteUint32Le(uint32(lenAddr), uint32(len(runes)))
+			mod.Memory().WriteUint32Le(uint32(lenAddr), uint32(n))
 		}).
 		Export("tree_sitter_parse_callback").
 		NewFunctionBuilder().

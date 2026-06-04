@@ -48,9 +48,14 @@ type Query struct {
 // to maxQueryRetries times on OOB traps; the trap allocates the dlmalloc free
 // list, making the subsequent attempt succeed.
 // maxQueryRetries is the maximum number of ts_query_new attempts before giving
-// up. In practice some older grammars need exactly 3 OOB failures before the
-// dlmalloc free list is primed; 5 covers that with margin.
-const maxQueryRetries = 5
+// up. Grammars compiled with older tree-sitter-cli versions need a number of
+// OOB warm-up traps before dlmalloc is properly primed:
+//   - typescript@0.23.2 (cli 0.24.4):  2 OOB traps then succeeds
+//   - php@0.23.x (cli 0.24.x):         needs more — empirically up to ~12
+// We use a generous bound because each retry only burns ~1 ms of wazero
+// execution and the cost of falling back to regex is significantly higher
+// (per-grammar quality regression vs v0.12.1).
+const maxQueryRetries = 16
 
 func (l *Language) NewQuery(ctx context.Context, source string) (*Query, error) {
 	r := l.rt

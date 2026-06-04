@@ -102,29 +102,36 @@ func loadPhpGrammar(t *testing.T) []byte {
 	return data
 }
 
-// TestPhpQuery_ExtractsKnownSymbols verifies the full LoadGrammar →
-// NewQuery → Parse → Exec pipeline for PHP. The NewQuery-before-Parse
-// ordering is mandatory: ts_parser_delete leaves a dlmalloc sentinel in
-// the free list that corrupts ts_query_new's internal malloc if called
-// after Parse.
+// TestPhpQuery_ExtractsKnownSymbols verifies the PHP grammar can extract
+// the expected definitions using the cursor-walk pipeline. As of v0.12.2,
+// production no longer calls ts_query_new for PHP because the 0.24.2
+// grammar reliably traps with OOB in our wasm runtime — see
+// extractPHPViaWalk in internal/symbols/wasm.go for the rationale.
+//
+// This test uses an isolated NewRuntime so it does not share the singleton
+// with the TS / Python tests; a failure here must not block the other
+// language tests.
 func TestPhpQuery_ExtractsKnownSymbols(t *testing.T) {
 	ctx := context.Background()
-	r, err := treesitter.GetRuntimeForTest(ctx)
+	r, err := treesitter.NewRuntime(ctx)
 	if err != nil {
 		t.Skipf("runtime unavailable: %v", err)
 	}
+	defer r.Close(ctx)
 	lang, err := r.LoadGrammar(ctx, "php", loadPhpGrammar(t))
 	if err != nil {
 		t.Fatalf("LoadGrammar: %v", err)
 	}
 	defer lang.Close(ctx)
 
-	// IMPORTANT: NewQuery must be called BEFORE Parse on this Language.
-	q, err := lang.NewQuery(ctx, PHPTags)
-	if err != nil {
-		t.Fatalf("NewQuery: %v", err)
+	fnDefID := lang.SymbolIDForName(ctx, "function_definition", true)
+	methodDeclID := lang.SymbolIDForName(ctx, "method_declaration", true)
+	classDeclID := lang.SymbolIDForName(ctx, "class_declaration", true)
+	nameFieldID := lang.FieldIDForName(ctx, "name")
+	if fnDefID == 0 || classDeclID == 0 || methodDeclID == 0 || nameFieldID == 0 {
+		t.Fatalf("missing symbol/field ids fn=%d method=%d class=%d nameField=%d",
+			fnDefID, methodDeclID, classDeclID, nameFieldID)
 	}
-	defer q.Close(ctx)
 
 	src := []byte(`<?php
 function login() {}
@@ -138,23 +145,22 @@ class AuthService {
 	}
 	defer tree.Close(ctx)
 
-	caps, err := q.Exec(ctx, tree.RootNode(ctx))
+	defs, err := lang.WalkNamedChildren(ctx, tree, []uint16{fnDefID, methodDeclID, classDeclID}, nameFieldID)
 	if err != nil {
-		t.Fatalf("Exec: %v", err)
+		t.Fatalf("WalkNamedChildren: %v", err)
 	}
-
-	syms := ScanCaptures(caps, src, "test.php")
 	defSet := map[string]bool{}
-	for _, s := range syms {
-		if s.Kind == symbols.SymDef {
-			defSet[s.Name] = true
+	for _, d := range defs {
+		if d.NameEnd > d.NameStart && int(d.NameEnd) <= len(src) {
+			defSet[string(src[d.NameStart:d.NameEnd])] = true
 		}
 	}
 	for _, want := range []string{"login", "AuthService", "authenticate"} {
 		if !defSet[want] {
-			t.Errorf("missing def %q in %v", want, syms)
+			t.Errorf("missing def %q in %v", want, defs)
 		}
 	}
+	_ = symbols.SymDef // keep the symbols import used.
 }
 
 // TestPythonQuery_ExtractsKnownSymbols verifies that the Python grammar
@@ -171,10 +177,11 @@ class AuthService {
 // it (PHP, TypeScript). Python bypasses that contract entirely.
 func TestPythonQuery_ExtractsKnownSymbols(t *testing.T) {
 	ctx := context.Background()
-	r, err := treesitter.GetRuntimeForTest(ctx)
+	r, err := treesitter.NewRuntime(ctx)
 	if err != nil {
 		t.Skipf("runtime: %v", err)
 	}
+	defer r.Close(ctx)
 	path := "../../../test-fixtures/tree-sitter-python.wasm"
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -226,10 +233,11 @@ class AuthService:
 
 func TestTSQuery_ExtractsKnownSymbols(t *testing.T) {
 	ctx := context.Background()
-	r, err := treesitter.GetRuntimeForTest(ctx)
+	r, err := treesitter.NewRuntime(ctx)
 	if err != nil {
 		t.Skipf("runtime unavailable: %v", err)
 	}
+	defer r.Close(ctx)
 	path := "../../../test-fixtures/tree-sitter-typescript.wasm"
 	data, err := os.ReadFile(path)
 	if err != nil {
