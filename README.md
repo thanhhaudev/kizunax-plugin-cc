@@ -54,6 +54,12 @@ It asks for provider (`openai` or `anthropic`), base URL, model, and API key. Th
 
 Each command accepts flags. See `plugins/kizunax/commands/` for details.
 
+## License & attribution
+
+Released under the [MIT License](LICENSE).
+
+Inspired by [codex-plugin-cc](https://github.com/openai/codex-plugin-cc) by OpenAI (Apache 2.0). KizunaX is an independent clean-room implementation in Go; prompts and orchestration were rewritten, not copied. The two projects share the broad concept of LLM-driven code review accessible from Claude Code, but the code is independently authored.
+
 ## Uninstall
 
 macOS / Linux:
