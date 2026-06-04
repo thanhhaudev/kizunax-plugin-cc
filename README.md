@@ -32,13 +32,21 @@ The script downloads the pre-built binary, falls back to `go build` if no matchi
 
 ## First-time setup
 
-Open Claude Code and run:
+From the repo root:
+
+```
+./setup.sh
+```
+
+Or, from inside Claude Code:
 
 ```
 /kizunax:setup
 ```
 
-It asks for provider (`openai` or `anthropic`), base URL, model, and API key. The answers are saved to `~/.kizunax/config.json` (`%USERPROFILE%\.kizunax\config.json` on Windows).
+Both open the same local browser form. It asks for provider (`openai` or `anthropic`), base URL, model, and API key. The answers are saved to `~/.kizunax/config.json` (`%USERPROFILE%\.kizunax\config.json` on Windows).
+
+`./setup.sh` also accepts pass-through flags: `--status` prints saved config + per-key probe results, `--enable-stop-gate` / `--disable-stop-gate` toggle the v0.7 review-on-stop hook.
 
 ## Commands
 
@@ -49,7 +57,7 @@ It asks for provider (`openai` or `anthropic`), base URL, model, and API key. Th
 | `/kizunax:status` | List background review jobs |
 | `/kizunax:result <id>` | Print the result of a finished job |
 | `/kizunax:cancel <id>` | Cancel a running background job |
-| `/kizunax:setup` | Re-configure provider, model, or API key |
+| `/kizunax:setup` | Re-configure provider, model, or API key (or run `./setup.sh` from the shell) |
 | `/kizunax:index <sub>` | Manage the v0.13 workspace AST index (`status`, `enable`/`disable`/`toggle`, `sync`, `purge`, `info <symbol>`) |
 | `/kizunax:expansion <sub>` | Toggle v1.1.0 bundle expansion strategies (`status`, `enable`/`disable`/`set` `<csv>`, `reset`) |
 
