@@ -8,7 +8,7 @@ import (
 
 	"github.com/thanhhaudev/kizunax-plugin-cc/internal/config"
 	xerrors "github.com/thanhhaudev/kizunax-plugin-cc/pkg/errors"
-	"github.com/thanhhaudev/kizunax-plugin-cc/internal/git"
+	"github.com/thanhhaudev/kizunax-plugin-cc/pkg/git"
 )
 
 type Bundle struct {

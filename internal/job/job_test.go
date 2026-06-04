@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/thanhhaudev/kizunax-plugin-cc/internal/git"
+	"github.com/thanhhaudev/kizunax-plugin-cc/pkg/git"
 	"github.com/thanhhaudev/kizunax-plugin-cc/internal/state"
 )
 
