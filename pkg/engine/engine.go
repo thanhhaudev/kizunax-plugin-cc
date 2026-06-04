@@ -3,7 +3,6 @@ package engine
 import (
 	"context"
 	"fmt"
-	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -224,11 +223,12 @@ func (e *Engine) tryLoadIndex() (*index.Index, error) {
 	return idx, nil
 }
 
-// logf writes a verbose log line to BundleLogSink (if non-nil) else stderr.
+// logf writes a verbose log line to stderr. BundleLogSink intentionally
+// is NOT used here: that sink receives ONLY jsonl entries from
+// bundlelog.AppendTo. Mixing plain-text verbose lines with jsonl breaks
+// downstream tooling that pipes the file to jq. Library consumers that
+// want to redirect verbose output should plug into stderr or set
+// Verbose=false and emit their own diagnostics from telemetry instead.
 func (e *Engine) logf(format string, args ...any) {
-	w := io.Writer(os.Stderr)
-	if e.cfg.BundleLogSink != nil {
-		w = e.cfg.BundleLogSink
-	}
-	fmt.Fprintf(w, format, args...)
+	fmt.Fprintf(os.Stderr, format, args...)
 }
