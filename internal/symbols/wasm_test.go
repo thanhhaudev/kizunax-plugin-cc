@@ -32,3 +32,25 @@ func TestWASMExtractor_FallsBackWhenGrammarMissing(t *testing.T) {
 		t.Fatalf("expected fallback regex to extract symbols when grammar missing")
 	}
 }
+
+func TestSplitDottedPath(t *testing.T) {
+	cases := []struct {
+		in       string
+		wantName string
+		wantPkg  string
+	}{
+		{"app", "app", ""},
+		{"app.route", "route", "app"},
+		{"a.b.c", "c", "a.b"},
+		{"", "", ""},
+		{".leading", "leading", ""},
+		{"trailing.", "", "trailing"},
+	}
+	for _, c := range cases {
+		gotName, gotPkg := splitDottedPath(c.in)
+		if gotName != c.wantName || gotPkg != c.wantPkg {
+			t.Errorf("splitDottedPath(%q) = (%q, %q); want (%q, %q)",
+				c.in, gotName, gotPkg, c.wantName, c.wantPkg)
+		}
+	}
+}

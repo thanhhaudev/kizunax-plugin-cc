@@ -338,6 +338,30 @@ func sliceBytes(src []byte, start, end uint32) string {
 	return string(src[start:end])
 }
 
+// splitDottedPath splits a dotted-name string into a (name, pkg) pair
+// matching the Symbol Pkg convention: the last segment is Name, everything
+// before is Pkg. Examples:
+//
+//	"app"          → ("app", "")
+//	"app.route"    → ("route", "app")
+//	"a.b.c"        → ("c", "a.b")
+//	""             → ("", "")
+//	".leading"     → ("leading", "")
+//	"trailing."    → ("", "trailing")
+//
+// Used by extractPythonViaWalk for decorator method qualifiers and
+// dotted-import path emission.
+func splitDottedPath(s string) (name, pkg string) {
+	if s == "" {
+		return "", ""
+	}
+	dot := strings.LastIndex(s, ".")
+	if dot < 0 {
+		return s, ""
+	}
+	return s[dot+1:], s[:dot]
+}
+
 // extractPHPViaWalk extracts PHP symbols using tree cursor traversal. See
 // extractPythonViaWalk for the rationale (ts_query_new traps OOB on the
 // PHP 0.24.2 grammar).
