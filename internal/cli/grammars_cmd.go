@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/thanhhaudev/kizunax-plugin-cc/internal/grammars"
+	"github.com/thanhhaudev/kizunax-plugin-cc/pkg/grammars"
 )
 
 func runGrammars(args []string) error {
