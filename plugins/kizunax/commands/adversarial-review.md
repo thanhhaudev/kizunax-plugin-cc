@@ -26,11 +26,53 @@ Execution mode:
 
 ### Scope guard (run AFTER size estimate, BEFORE Step 1)
 - Skip this step if `--paths` is already in the raw arguments — user already scoped.
-- If the estimated diff is **> 100 files OR > 150 KB**, the review will be truncated at the 256 KB bundle cap and the LLM call alone may take 5-10+ minutes.
-  - Ask once via `AskUserQuestion` with the narrow option labeled `(Recommended)` first:
-    - Option 1 (recommended): `Narrow with --paths` — abort and tell the user one sentence like "Re-run with `--paths <dir1,dir2,...>` to focus the review (try the top-level dirs of the changed files). Example: `--paths app/Http,app/Services`."
-    - Option 2: `Continue full diff` — proceed but warn the user "Continuing with truncated bundle; review may take 5-10+ minutes and skip later files." then continue to Step 1.
-- If diff is within limits OR user chose Continue, proceed to Step 1.
+- If the estimated diff is **> 100 files OR > 150 KB**, the review will be truncated at the 256 KB bundle cap and a single LLM call may take 5-10+ minutes.
+  - Ask once via `AskUserQuestion` with three options, fan-out labeled `(Recommended)` first:
+    - Option 1 (recommended): `Fan out parallel` — split changed files by top-level dir, run N adversarial reviews in parallel (one per bucket), merge findings. Full coverage; wall time ≈ slowest bucket (~2-3 min). See "Fan-out flow" below.
+    - Option 2: `Narrow with --paths` — abort and tell the user one sentence like "Re-run with `--paths <dir1,dir2,...>` to focus on specific dirs. Example: `--paths app/Http,app/Services`."
+    - Option 3: `Continue full diff (slow)` — proceed but warn the user "Continuing with truncated bundle; review may take 5-10+ minutes and skip files past the 256 KB cap." then continue to Step 1.
+- If diff is within limits, skip the question and continue to Step 1.
+- If user chose `Fan out parallel`, jump to "Fan-out flow" below instead of Steps 1-2.
+- If user chose `Continue full diff`, continue to Step 1.
+
+### Fan-out flow (only when user picked "Fan out parallel")
+
+1. **List changed files.** Pick the command matching the target:
+   - Working-tree: `git diff --name-only HEAD` plus `git ls-files --others --exclude-standard`.
+   - Branch (`--base <ref>`): `git diff --name-only <ref>...HEAD`.
+   - Commit (`--commit <sha>`): `git diff-tree --no-commit-id --name-only -r <sha>`.
+   - Range (`--from <a> --to <b>`): `git diff --name-only <a>..<b>`.
+
+2. **Bucket by top-level dir.** Group files by their first path segment (`app/`, `resources/`, `database/`, `tests/`, `config/`, ...). Then balance:
+   - If a single bucket has > 50 files, sub-group it by 2nd segment (e.g., split `app/` into `app/Http`, `app/Services`, `app/Models`).
+   - If total bucket count > 10, merge the smallest buckets into a single "misc" bucket until count ≤ 10.
+   - Drop empty buckets. If you end up with only 1 bucket, fan-out isn't useful — fall back to a normal single review (continue to Step 1).
+
+3. **Pick provider once for ALL buckets.** Run Step 1 (provider routing) using the FULL diff size (not per-bucket), then skip Step 2 — fan-out is always foreground/wait so we can merge in the same turn.
+
+4. **Spawn N background bashes — one per bucket.** Each bucket uses `--paths <bucket-prefix>` and `--quiet` (suppresses per-bucket usage footer). Preserve the same target flags (`--base`, `--commit`, `--from`/`--to`, `--working-tree`) the user originally passed:
+
+   ```typescript
+   Bash({
+     command: `"${CLAUDE_PLUGIN_ROOT}/scripts/run.sh" "Binary missing — run /kizunax:setup to build it." adversarial-review --provider <chosen> <target-flags> --paths <bucket-prefix> --quiet`,
+     description: `Kizunax fan-out bucket <i>/<N>: <bucket-prefix>`,
+     run_in_background: true
+   })
+   ```
+
+   Tell the user one line: "Fan-out: spawning N buckets in parallel (bucket1, bucket2, ...)."
+
+5. **Poll until all N buckets complete.** Use `BashOutput` on each shell ID. Between polls, sleep briefly (the harness waits naturally). After every check, emit one progress line: "Fan-out: X/N buckets done.". Cap the per-bucket wait at 15 minutes; if a bucket is still running past that, mark it skipped and continue.
+
+6. **Collect and merge findings.** For each completed bucket's stdout, parse the rendered adversarial-review markdown — specifically the findings table — and note the bucket source. Then render ONE unified report:
+   - **TL;DR**: total findings count, breakdown by severity, list of buckets reviewed (and any skipped).
+   - **Findings table** (all buckets merged): dedupe rows that share file path + line + title. Sort by severity (critical → important → minor), then by file path. Add a `Bucket` column or annotation showing which prefix surfaced the finding.
+   - **Skipped buckets** (if any): list bucket + reason (timeout, API error, parse error).
+
+7. **Output rules for fan-out report**:
+   - Do NOT paraphrase individual findings — preserve the binary's exact wording.
+   - Do NOT add a usage footer (each bucket used `--quiet`; fan-out report is the unified view).
+   - End with one summary line: "Fan-out adversarial review complete. Reviewed N/N buckets, found X findings."
 
 ### Step 1 — Provider routing (ask FIRST, before wait/background)
 - If the raw arguments already include `--provider openai` or `--provider anthropic`, skip this step entirely — the user's explicit choice wins.
