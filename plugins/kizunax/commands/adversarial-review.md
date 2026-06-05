@@ -14,9 +14,6 @@ Core constraint:
 - This command is review-only. Do not fix issues, apply patches, or suggest you are about to make changes.
 - Your only job is to run the review and return the binary's output verbatim. Do not paraphrase or summarize.
 
-Pre-flight:
-- Verify `${CLAUDE_PLUGIN_ROOT}/bin/kizunax` exists. If not, tell the user: "Binary missing — run `/kizunax:setup` first to build it." Then stop.
-
 Execution mode:
 
 ### Size estimate
@@ -51,10 +48,12 @@ Execution mode:
 Foreground flow:
 - If the raw arguments already include `--provider <name>`, run the binary without inserting a second flag:
   ```bash
+  [ -f "${CLAUDE_PLUGIN_ROOT}/bin/kizunax" ] || { echo "Binary missing — run /kizunax:setup to build it."; exit 1; }
   ${CLAUDE_PLUGIN_ROOT}/bin/kizunax adversarial-review $ARGUMENTS
   ```
 - Otherwise, prepend the routed choice from Step 1:
   ```bash
+  [ -f "${CLAUDE_PLUGIN_ROOT}/bin/kizunax" ] || { echo "Binary missing — run /kizunax:setup to build it."; exit 1; }
   ${CLAUDE_PLUGIN_ROOT}/bin/kizunax adversarial-review --provider <chosen> $ARGUMENTS
   ```
 - Return the command stdout verbatim, exactly as-is.
@@ -63,7 +62,7 @@ Background flow:
 - If the raw arguments already include `--provider <name>`, launch without inserting a second flag:
   ```typescript
   Bash({
-    command: `${CLAUDE_PLUGIN_ROOT}/bin/kizunax adversarial-review $ARGUMENTS`,
+    command: `[ -f "${CLAUDE_PLUGIN_ROOT}/bin/kizunax" ] || { echo "Binary missing — run /kizunax:setup to build it."; exit 1; }; ${CLAUDE_PLUGIN_ROOT}/bin/kizunax adversarial-review $ARGUMENTS`,
     description: "Kizunax adversarial review",
     run_in_background: true
   })
@@ -71,7 +70,7 @@ Background flow:
 - Otherwise, prepend the routed choice from Step 1:
   ```typescript
   Bash({
-    command: `${CLAUDE_PLUGIN_ROOT}/bin/kizunax adversarial-review --provider <chosen> $ARGUMENTS`,
+    command: `[ -f "${CLAUDE_PLUGIN_ROOT}/bin/kizunax" ] || { echo "Binary missing — run /kizunax:setup to build it."; exit 1; }; ${CLAUDE_PLUGIN_ROOT}/bin/kizunax adversarial-review --provider <chosen> $ARGUMENTS`,
     description: "Kizunax adversarial review",
     run_in_background: true
   })
