@@ -110,9 +110,26 @@ func Run(ctx context.Context, pluginRoot string, p provider.Provider, bundle dif
 	expandCallers, expandTypeDefs, expandTests := resolveExpansion(opts, opts.WorkspaceDir)
 	anyExpand := expandCallers || expandTypeDefs || expandTests
 
+	// v0.19.1: NoExpand must actually skip enrichment, not just disable
+	// the three expansion strategies. Per llmreviewkit engine.go:117, the
+	// only gate on the WASM tree-sitter extraction (the 10+ minute CPU
+	// spin on Laravel monorepos) is an empty WorkspaceRoot. The expansion
+	// flags only affect post-extraction ranking, so leaving WorkspaceRoot
+	// non-empty kept the symbol walker running even with --no-expand.
+	// When the user (or the cmd_review.go workspace-size guard) asks to
+	// skip expansion, blank out WorkspaceRoot so the engine takes the
+	// fast no-enrichment path.
+	workspaceRoot := opts.WorkspaceRoot
+	if opts.NoExpand {
+		workspaceRoot = ""
+		if opts.Verbose {
+			fmt.Fprintln(os.Stderr, "[verbose] enrichment fully skipped (WorkspaceRoot blanked)")
+		}
+	}
+
 	engCfg := engine.Config{
 		Provider:               p,
-		WorkspaceRoot:          opts.WorkspaceRoot,
+		WorkspaceRoot:          workspaceRoot,
 		StateWorkspaceOverride: wsOverride,
 		PromptRoot:             pluginRoot,
 		UseIndex:               useIdx,
