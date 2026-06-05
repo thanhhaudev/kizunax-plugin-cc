@@ -2,7 +2,7 @@
 description: Manage Kizunax bundle expansion strategies (status/enable/disable/set/reset)
 argument-hint: '<subcommand> [csv]'
 disable-model-invocation: true
-allowed-tools: Bash(${CLAUDE_PLUGIN_ROOT}/bin/kizunax:*)
+allowed-tools: Bash(${CLAUDE_PLUGIN_ROOT}/scripts/run.sh:*)
 ---
 
 Manage v1.1.0 bundle expansion strategies for KizunaX reviews. Persisted per-workspace at `~/.kizunax/state/<ws-hash>/expansion.json`.
@@ -29,11 +29,7 @@ Precedence (earliest wins): kill switch (`KIZUNAX_DISABLE_EXPAND=1`) > CLI flag 
 Run the binary with the arguments the user provided. Default to `status` if no subcommand was passed.
 
 ```bash
-if [ ! -f "${CLAUDE_PLUGIN_ROOT}/bin/kizunax" ]; then
-  echo "Binary missing — run ./install.sh at the repo root."
-  exit 1
-fi
-"${CLAUDE_PLUGIN_ROOT}/bin/kizunax" expansion $ARGUMENTS
+"${CLAUDE_PLUGIN_ROOT}/scripts/run.sh" "Binary missing — run ./install.sh at the repo root." expansion $ARGUMENTS
 ```
 
 Show the binary's stdout verbatim. Do not paraphrase. Do not call any further tools after the Bash invocation.

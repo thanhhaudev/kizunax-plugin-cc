@@ -2,7 +2,7 @@
 description: Manage Kizunax workspace AST index (status/sync/enable/disable/toggle/info/purge)
 argument-hint: '<subcommand> [args]'
 disable-model-invocation: true
-allowed-tools: Bash(${CLAUDE_PLUGIN_ROOT}/bin/kizunax:*)
+allowed-tools: Bash(${CLAUDE_PLUGIN_ROOT}/scripts/run.sh:*)
 ---
 
 Manage the v0.13 workspace AST index. Subcommands:
@@ -18,11 +18,7 @@ Manage the v0.13 workspace AST index. Subcommands:
 Run the binary with the arguments the user provided. Default to `status` if no subcommand was passed.
 
 ```bash
-if [ ! -f "${CLAUDE_PLUGIN_ROOT}/bin/kizunax" ]; then
-  echo "Binary missing — run ./install.sh at the repo root."
-  exit 1
-fi
-"${CLAUDE_PLUGIN_ROOT}/bin/kizunax" index $ARGUMENTS
+"${CLAUDE_PLUGIN_ROOT}/scripts/run.sh" "Binary missing — run ./install.sh at the repo root." index $ARGUMENTS
 ```
 
 Show the binary's stdout verbatim. Do not paraphrase. Do not call any further tools after the Bash invocation.

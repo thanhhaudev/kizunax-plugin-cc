@@ -48,13 +48,11 @@ Execution mode:
 Foreground flow:
 - If the raw arguments already include `--provider <name>`, run the binary without inserting a second flag:
   ```bash
-  if [ ! -f "${CLAUDE_PLUGIN_ROOT}/bin/kizunax" ]; then echo "Binary missing — run /kizunax:setup to build it."; exit 1; fi
-  ${CLAUDE_PLUGIN_ROOT}/bin/kizunax review $ARGUMENTS
+  "${CLAUDE_PLUGIN_ROOT}/scripts/run.sh" "Binary missing — run /kizunax:setup to build it." review $ARGUMENTS
   ```
 - Otherwise, prepend the routed choice from Step 1:
   ```bash
-  if [ ! -f "${CLAUDE_PLUGIN_ROOT}/bin/kizunax" ]; then echo "Binary missing — run /kizunax:setup to build it."; exit 1; fi
-  ${CLAUDE_PLUGIN_ROOT}/bin/kizunax review --provider <chosen> $ARGUMENTS
+  "${CLAUDE_PLUGIN_ROOT}/scripts/run.sh" "Binary missing — run /kizunax:setup to build it." review --provider <chosen> $ARGUMENTS
   ```
 - Return the command stdout verbatim, exactly as-is.
 
@@ -62,7 +60,7 @@ Background flow:
 - If the raw arguments already include `--provider <name>`, launch without inserting a second flag:
   ```typescript
   Bash({
-    command: `if [ ! -f "${CLAUDE_PLUGIN_ROOT}/bin/kizunax" ]; then echo "Binary missing — run /kizunax:setup to build it."; exit 1; fi; ${CLAUDE_PLUGIN_ROOT}/bin/kizunax review $ARGUMENTS`,
+    command: `"${CLAUDE_PLUGIN_ROOT}/scripts/run.sh" "Binary missing — run /kizunax:setup to build it." review $ARGUMENTS`,
     description: "Kizunax review",
     run_in_background: true
   })
@@ -70,7 +68,7 @@ Background flow:
 - Otherwise, prepend the routed choice from Step 1:
   ```typescript
   Bash({
-    command: `if [ ! -f "${CLAUDE_PLUGIN_ROOT}/bin/kizunax" ]; then echo "Binary missing — run /kizunax:setup to build it."; exit 1; fi; ${CLAUDE_PLUGIN_ROOT}/bin/kizunax review --provider <chosen> $ARGUMENTS`,
+    command: `"${CLAUDE_PLUGIN_ROOT}/scripts/run.sh" "Binary missing — run /kizunax:setup to build it." review --provider <chosen> $ARGUMENTS`,
     description: "Kizunax review",
     run_in_background: true
   })

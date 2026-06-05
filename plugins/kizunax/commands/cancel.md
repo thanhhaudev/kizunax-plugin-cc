@@ -2,7 +2,7 @@
 description: Cancel an active background Kizunax job in this repository
 argument-hint: '[job-id-or-prefix] [--all]'
 disable-model-invocation: true
-allowed-tools: Bash(${CLAUDE_PLUGIN_ROOT}/bin/kizunax:*)
+allowed-tools: Bash(${CLAUDE_PLUGIN_ROOT}/scripts/run.sh:*)
 ---
 
-!`if [ ! -f "${CLAUDE_PLUGIN_ROOT}/bin/kizunax" ]; then echo "Binary missing — run /kizunax:setup to build it."; exit 1; fi; "${CLAUDE_PLUGIN_ROOT}/bin/kizunax" cancel $ARGUMENTS`
+!`"${CLAUDE_PLUGIN_ROOT}/scripts/run.sh" "Binary missing — run /kizunax:setup to build it." cancel $ARGUMENTS`
