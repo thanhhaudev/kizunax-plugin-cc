@@ -50,11 +50,11 @@ Execution mode:
 
 3. **Pick provider once for ALL buckets.** Run Step 1 (provider routing) using the FULL diff size (not per-bucket), then skip Step 2 — fan-out is always foreground/wait so we can merge in the same turn.
 
-4. **Spawn N background bashes — one per bucket.** Each bucket uses `--paths <bucket-prefix>` and `--quiet` (suppresses per-bucket usage footer). Preserve the same target flags (`--base`, `--commit`, `--from`/`--to`, `--working-tree`) the user originally passed:
+4. **Spawn N background bashes — one per bucket.** Each bucket uses `--paths <bucket-prefix>`, `--quiet` (suppresses per-bucket usage footer), and **`--no-expand` (required for fan-out)** to skip the v0.12 workspace symbol enrichment. Enrichment scans the entire workspace for definitions of every symbol referenced in the diff — on monorepos (Laravel, Django, etc.) this scan can spin the binary at 100% CPU for 10+ minutes per bucket without ever reaching the LLM call. Skipping it costs some context-aware insight but is the difference between a 3-minute and a 30-minute fan-out. Preserve the same target flags (`--base`, `--commit`, `--from`/`--to`, `--working-tree`) the user originally passed:
 
    ```typescript
    Bash({
-     command: `"${CLAUDE_PLUGIN_ROOT}/scripts/run.sh" "Binary missing — run /kizunax:setup to build it." adversarial-review --provider <chosen> <target-flags> --paths <bucket-prefix> --quiet`,
+     command: `"${CLAUDE_PLUGIN_ROOT}/scripts/run.sh" "Binary missing — run /kizunax:setup to build it." adversarial-review --provider <chosen> <target-flags> --paths <bucket-prefix> --quiet --no-expand`,
      description: `Kizunax fan-out bucket <i>/<N>: <bucket-prefix>`,
      run_in_background: true
    })
