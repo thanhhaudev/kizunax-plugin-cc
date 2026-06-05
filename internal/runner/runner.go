@@ -171,6 +171,42 @@ func Run(ctx context.Context, pluginRoot string, p provider.Provider, bundle dif
 		}
 	}
 
+	// v0.24.0: post-process finding verification via llmreviewkit v1.4.0.
+	// Classifies each finding as in-hunk / context-only / file-not-in-diff
+	// and emits a stderr summary so the user sees signal:noise at a glance.
+	// Does NOT modify the findings — purely diagnostic. Callers who want
+	// stricter behavior can grep this output or post-filter themselves.
+	if len(res.Review.Findings) > 0 {
+		verifications := engine.VerifyFindings(bundle, res.Review.Findings)
+		inHunk, contextOnly, notInDiff := 0, 0, 0
+		for _, v := range verifications {
+			switch {
+			case v.InHunk:
+				inHunk++
+			case v.FileInDiff:
+				contextOnly++
+			default:
+				notInDiff++
+			}
+		}
+		total := len(verifications)
+		if contextOnly > 0 || notInDiff > 0 {
+			fmt.Fprintf(os.Stderr, "[info] finding verification: %d/%d in changed hunks, %d in unchanged context (LLM line drift), %d cite files not in diff (likely hallucinated)\n",
+				inHunk, total, contextOnly, notInDiff)
+			if notInDiff > 0 {
+				for i, v := range verifications {
+					if !v.FileInDiff {
+						f := res.Review.Findings[i]
+						fmt.Fprintf(os.Stderr, "[warn]   hallucinated finding %d: %q at %s:%d-%d — file not in diff\n",
+							i+1, f.Title, f.File, f.LineStart, f.LineEnd)
+					}
+				}
+			}
+		} else {
+			fmt.Fprintf(os.Stderr, "[info] finding verification: %d/%d in changed hunks (all verified)\n", inHunk, total)
+		}
+	}
+
 	// KizunaX-specific layering 2: helper TL;DR (gated by finding count + flags + quota).
 	if shouldSummarize(opts, res.Review.Findings) && opts.HelperCfg.BaseURL != "" && opts.HelperAPIKey != "" {
 		if helperQuotaOK(opts.WorkspaceDir, opts.HelperAPIKey) {
