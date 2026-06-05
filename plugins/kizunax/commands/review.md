@@ -24,6 +24,14 @@ Execution mode:
 - Treat untracked files as reviewable.
 - Only conclude "nothing to review" when the relevant scope is genuinely empty.
 
+### Scope guard (run AFTER size estimate, BEFORE Step 1)
+- Skip this step if `--paths` is already in the raw arguments — user already scoped.
+- If the estimated diff is **> 100 files OR > 150 KB**, the review will be truncated at the 256 KB bundle cap and the LLM call alone may take 5-10+ minutes.
+  - Ask once via `AskUserQuestion` with the narrow option labeled `(Recommended)` first:
+    - Option 1 (recommended): `Narrow with --paths` — abort and tell the user one sentence like "Re-run with `--paths <dir1,dir2,...>` to focus the review (try the top-level dirs of the changed files). Example: `--paths app/Http,app/Services`."
+    - Option 2: `Continue full diff` — proceed but warn the user "Continuing with truncated bundle; review may take 5-10+ minutes and skip later files." then continue to Step 1.
+- If diff is within limits OR user chose Continue, proceed to Step 1.
+
 ### Step 1 — Provider routing (ask FIRST, before wait/background)
 - If the raw arguments already include `--provider openai` or `--provider anthropic`, skip this step entirely — the user's explicit choice wins.
 - Otherwise, decide the recommendation based on estimated diff size + mode:

@@ -134,6 +134,18 @@ func runReviewWithMode(args []string, mode prompt.Mode) error {
 			bundle.TotalBytes, len(bundle.Untracked), len(bundle.Warnings))
 	}
 
+	// Surface bundle warnings prominently BEFORE the LLM call so the user
+	// can Ctrl+C and re-run with --paths if they see truncation. Without
+	// this the warnings only appear inside the rendered review, too late
+	// for a multi-minute API call on a giant truncated diff.
+	if len(bundle.Warnings) > 0 {
+		fmt.Fprintln(os.Stderr, "[warn] Bundle warnings — review may miss context:")
+		for _, w := range bundle.Warnings {
+			fmt.Fprintf(os.Stderr, "[warn]   - %s\n", w)
+		}
+		fmt.Fprintln(os.Stderr, "[warn] Tip: re-run with --paths <dir1,dir2,...> to narrow scope (e.g. --paths app/Http,app/Services).")
+	}
+
 	pluginRoot, err := ResolvePluginRoot()
 	if err != nil {
 		return err
