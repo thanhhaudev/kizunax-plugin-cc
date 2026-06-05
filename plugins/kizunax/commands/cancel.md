@@ -6,3 +6,5 @@ allowed-tools: Bash(${CLAUDE_PLUGIN_ROOT}/scripts/run.sh:*)
 ---
 
 !`"${CLAUDE_PLUGIN_ROOT}/scripts/run.sh" "Binary missing — run /kizunax:setup to build it." cancel $ARGUMENTS`
+
+Render the binary's stdout verbatim. Do not paraphrase.
