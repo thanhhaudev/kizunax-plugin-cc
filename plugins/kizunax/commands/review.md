@@ -16,6 +16,16 @@ Core constraint:
 
 Execution mode:
 
+### Base ref selection (run FIRST when no target flag is set)
+- If the raw arguments already include any of `--working-tree`, `--base <ref>`, `--commit <sha>`, or `--from <a> --to <b>`, skip this step — the user has chosen.
+- Otherwise, the user almost certainly wants a PR-style branch diff. Do NOT default to master/main; that includes everything on the integration branch.
+- First try the current branch's upstream tracking ref via `git rev-parse --abbrev-ref @{upstream}`. If it resolves, use it as `--base <ref>` and tell the user `Base auto-resolved to <ref> (tracked upstream).`
+- Otherwise, ask the user once via `AskUserQuestion`:
+  - Header: `PR base branch`
+  - Question: `This branch has no upstream set. Which branch does this PR merge into?`
+  - Options (Recommended first): `develop`, `main`, `master`, plus one slot for `Working tree (uncommitted only)` if appropriate.
+- Add `--base <chosen>` (or `--working-tree`) to the args before continuing.
+
 ### Size estimate
 - Working-tree (default): inspect `git status --short --untracked-files=all`, `git diff --shortstat --cached`, `git diff --shortstat`.
 - Branch (`--base <ref>`): `git diff --shortstat <ref>...HEAD`. If `<ref>` doesn't resolve (`git rev-parse --verify <ref>` fails), substitute with the repo's default branch from `git symbolic-ref --short refs/remotes/origin/HEAD` and rewrite the `--base` flag in the args to match; tell the user the substitution in one sentence. If even that fails (no remote), ask the user which ref to use.

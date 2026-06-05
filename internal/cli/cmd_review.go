@@ -80,6 +80,20 @@ func runReviewWithMode(args []string, mode prompt.Mode) error {
 	}
 
 	if target.Kind == git.TargetBranchDiff {
+		// v0.20.0: --base auto triggers smart detection — upstream tracking
+		// branch first, then common dev branch names, finally origin/HEAD.
+		// Helps users on PR workflows (feature → develop → master) where
+		// `--base master` includes hundreds of unrelated commits from the
+		// integration branch.
+		if target.Base == "auto" {
+			resolved, err := autoDetectBaseRef()
+			if err != nil {
+				return xerrors.User("base_auto_failed", err.Error(),
+					"Pass --base <ref> explicitly, or set an upstream with `git branch --set-upstream-to=<remote>/<branch>`.")
+			}
+			fmt.Fprintf(os.Stderr, "[info] --base auto resolved to %q\n", resolved)
+			target.Base = resolved
+		}
 		resolved, substituted, err := resolveBaseRef(target.Base)
 		if err != nil {
 			return xerrors.User("base_ref_not_found", err.Error(), "Run `git branch -a` to see available refs.")
@@ -158,6 +172,22 @@ func runReviewWithMode(args []string, mode prompt.Mode) error {
 			fmt.Fprintf(os.Stderr, "[warn]   - %s\n", w)
 		}
 		fmt.Fprintln(os.Stderr, "[warn] Tip: re-run with --paths <dir1,dir2,...> to narrow scope (e.g. --paths app/Http,app/Services).")
+	}
+
+	// v0.20.0 baseline-mismatch warning: if the user passed an explicit
+	// --base and the resulting diff is large, check whether an alternate
+	// base (upstream, develop, dev, main) would produce a meaningfully
+	// smaller diff — a strong signal the user intended a PR-scope review
+	// against the integration branch, not against master/main.
+	if target.Kind == git.TargetBranchDiff {
+		out, err := exec.Command("git", "diff", "--name-only", target.Base+"...HEAD").Output()
+		if err == nil {
+			fileCount := strings.Count(string(out), "\n")
+			if suggested, suggestedCount, ok := suggestSmallerBaseRefs(target.Base, fileCount); ok {
+				fmt.Fprintf(os.Stderr, "[warn] Diff vs %q is %d files; vs %q would be %d files.\n", target.Base, fileCount, suggested, suggestedCount)
+				fmt.Fprintf(os.Stderr, "[warn] If this PR merges into %q, re-run with --base %s for a focused review.\n", suggested, suggested)
+			}
+		}
 	}
 
 	pluginRoot, err := ResolvePluginRoot()
@@ -378,6 +408,92 @@ func countTrackedFilesCheaply(cwd string) (int, bool) {
 		return 0, false
 	}
 	return bytes.Count(out, []byte{0}), true
+}
+
+// autoDetectBaseRef chooses the best base ref for a branch-diff review.
+// Precedence (first one that resolves wins):
+//  1. The current branch's upstream tracking branch (`@{upstream}`)
+//  2. Common dev branch names: develop, dev, main, master
+//  3. The repo's remote default branch from origin/HEAD
+//
+// Returns an error only if NONE of these resolve.
+func autoDetectBaseRef() (string, error) {
+	// 1. Upstream tracking branch.
+	if out, err := exec.Command("git", "rev-parse", "--abbrev-ref", "@{upstream}").Output(); err == nil {
+		ref := strings.TrimSpace(string(out))
+		if ref != "" && exec.Command("git", "rev-parse", "--verify", ref+"^{commit}").Run() == nil {
+			return ref, nil
+		}
+	}
+	// 2. Common dev branch names.
+	for _, candidate := range []string{"develop", "dev", "main", "master"} {
+		if exec.Command("git", "rev-parse", "--verify", candidate+"^{commit}").Run() == nil {
+			return candidate, nil
+		}
+	}
+	// 3. Remote default branch from origin/HEAD.
+	if out, err := exec.Command("git", "symbolic-ref", "--short", "refs/remotes/origin/HEAD").Output(); err == nil {
+		ref := strings.TrimSpace(string(out))
+		if ref != "" && exec.Command("git", "rev-parse", "--verify", ref+"^{commit}").Run() == nil {
+			return ref, nil
+		}
+	}
+	return "", fmt.Errorf("could not auto-detect a base ref: no upstream tracking, no develop/dev/main/master branch, no origin/HEAD")
+}
+
+// suggestSmallerBaseRefs returns alternate base refs that produce a
+// significantly smaller diff than the chosen base. Used to warn the user
+// when `--base master` includes hundreds of files from an integration
+// branch and `--base develop` would scope to the PR's actual commits.
+//
+// Returns (suggestion, suggestionFileCount, ok). ok is false when no
+// alternate produces a meaningfully smaller diff (less than 1/3 the
+// chosen base's file count, and the absolute difference is > 20 files).
+func suggestSmallerBaseRefs(currentBase string, currentFileCount int) (string, int, bool) {
+	if currentFileCount < 100 {
+		// Small diff already, nothing to suggest.
+		return "", 0, false
+	}
+	candidates := []string{"@{upstream}", "develop", "dev", "main", "master"}
+	bestRef := ""
+	bestCount := currentFileCount
+	for _, c := range candidates {
+		if c == currentBase {
+			continue
+		}
+		// Resolve abstract refs (e.g. @{upstream}) to a concrete name first
+		// so the same ref doesn't compete with itself.
+		resolved := c
+		if c == "@{upstream}" {
+			out, err := exec.Command("git", "rev-parse", "--abbrev-ref", "@{upstream}").Output()
+			if err != nil {
+				continue
+			}
+			resolved = strings.TrimSpace(string(out))
+			if resolved == "" || resolved == currentBase {
+				continue
+			}
+		}
+		// Verify it exists.
+		if exec.Command("git", "rev-parse", "--verify", resolved+"^{commit}").Run() != nil {
+			continue
+		}
+		// Count files in diff vs this candidate.
+		out, err := exec.Command("git", "diff", "--name-only", resolved+"...HEAD").Output()
+		if err != nil {
+			continue
+		}
+		count := strings.Count(string(out), "\n")
+		if count > 0 && count < bestCount {
+			bestRef = resolved
+			bestCount = count
+		}
+	}
+	// Only suggest if alternate is < 1/3 current AND absolute saving > 20 files.
+	if bestRef != "" && bestCount*3 < currentFileCount && currentFileCount-bestCount > 20 {
+		return bestRef, bestCount, true
+	}
+	return "", 0, false
 }
 
 // resolveBaseRef verifies that ref exists locally. If not, it falls back to
