@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"time"
 
 	"github.com/thanhhaudev/kizunax-plugin-cc/internal/config"
 	"github.com/thanhhaudev/llmreviewkit/diff"
@@ -171,7 +172,7 @@ func Run(ctx context.Context, pluginRoot string, p provider.Provider, bundle dif
 	// back to v1 (index missing/stale), spawn a detached background sync
 	// so the NEXT review uses v2. Matches v0.13.0 lazy-background design.
 	if useIdx && res.Stats.ResolverPath == "v1" && opts.WorkspaceDir.Root != "" && opts.WorkspaceRoot != "" {
-		go spawnBackgroundIndexSync()
+		go spawnBackgroundIndexSync(opts.WorkspaceDir)
 	}
 
 	return Result{
@@ -240,13 +241,39 @@ func useIndexResolver(ws state.WorkspaceDir) bool {
 	return false
 }
 
+// indexSyncStaleAfter is how long an in-flight index-sync marker is
+// considered fresh before the next caller assumes it crashed and tries
+// again. 30 minutes is well above any reasonable sync time on any
+// workspace we've measured (largest seen: ~3 min on a 5000-file repo).
+const indexSyncStaleAfter = 30 * time.Minute
+
 // spawnBackgroundIndexSync exec's `kizunax index sync` detached. The
 // subprocess survives the parent runner.Run exiting. On Unix it gets its
 // own process group (Setpgid — see spawn_unix.go) so the parent's SIGINT
 // does not propagate; on Windows the default CreateProcess flags already
 // detach the child. Output is discarded. Best-effort: any error is
 // swallowed because the current review already has its v1 fallback.
-func spawnBackgroundIndexSync() {
+//
+// v0.19.0: cross-process dedup via state/{ws}/index.sync.inflight marker.
+// If a sync was started < indexSyncStaleAfter ago, skip — another process
+// is handling it. Without this, fan-out spawns 9 concurrent `index sync`
+// children that all hammer the filesystem and CPU simultaneously (the
+// root cause of the M1 Pro thermal trip seen in v0.18.0 testing).
+func spawnBackgroundIndexSync(ws state.WorkspaceDir) {
+	if ws.Root != "" {
+		markerPath := filepath.Join(ws.Root, "index.sync.inflight")
+		if info, err := os.Stat(markerPath); err == nil && time.Since(info.ModTime()) < indexSyncStaleAfter {
+			return // Another sync is in flight (or just finished). Skip.
+		}
+		// Touch the marker. The sibling sync subprocess does the actual
+		// work; we only signal "a sync was kicked off at this time".
+		// We don't remove on completion — the modtime + stale window
+		// is enough, and avoids needing the child to know about cleanup.
+		if f, err := os.OpenFile(markerPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o600); err == nil {
+			f.Close()
+		}
+	}
+
 	exe, err := os.Executable()
 	if err != nil {
 		return

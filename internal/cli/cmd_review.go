@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"io"
@@ -86,6 +87,19 @@ func runReviewWithMode(args []string, mode prompt.Mode) error {
 		if substituted {
 			fmt.Fprintf(os.Stderr, "[info] base ref %q not found locally; using %q (repo default branch) instead\n", target.Base, resolved)
 			target.Base = resolved
+		}
+	}
+
+	// v0.19.0 heat-aware enrichment guard: on monorepos with thousands of
+	// tracked files, the v0.12 workspace symbol enrichment (WASM tree-sitter
+	// parse + walker) can spin the binary at 100% CPU for 10+ minutes before
+	// the LLM call. Auto-disable expansion unless the user explicitly opted
+	// in with --expand-all or any --expand-*.
+	if !noExpand && !expandAll && !expandCallers && !expandTypeDefs && !expandTests {
+		if count, ok := countTrackedFilesCheaply(cwd); ok && count > enrichmentWorkspaceCap {
+			fmt.Fprintf(os.Stderr, "[warn] Workspace has %d tracked files (cap %d); auto-skipping symbol enrichment to avoid CPU spin.\n", count, enrichmentWorkspaceCap)
+			fmt.Fprintln(os.Stderr, "[warn] Override with --expand-all (or any --expand-*) if you accept the slowdown.")
+			noExpand = true
 		}
 	}
 
@@ -344,6 +358,26 @@ func parseTarget(args []string) (git.Target, error) {
 		t.Kind = git.TargetWorkingTree
 	}
 	return t, nil
+}
+
+// enrichmentWorkspaceCap is the per-workspace tracked-file count above
+// which symbol enrichment is auto-skipped. Empirically tuned against
+// a Laravel monorepo (Oneplat B2B System, ~5000 PHP files) where the
+// v0.12 WASM walker spun the binary at 100% CPU for 11+ minutes.
+const enrichmentWorkspaceCap = 3000
+
+// countTrackedFilesCheaply uses `git ls-files -z` to count tracked files
+// in the repo at cwd. Runs in <1s on a 10k-file monorepo (vs the symbol
+// walker's 10+ minutes). Returns (count, true) on success or (0, false)
+// if git fails for any reason (caller should NOT block on this).
+func countTrackedFilesCheaply(cwd string) (int, bool) {
+	cmd := exec.Command("git", "ls-files", "-z")
+	cmd.Dir = cwd
+	out, err := cmd.Output()
+	if err != nil {
+		return 0, false
+	}
+	return bytes.Count(out, []byte{0}), true
 }
 
 // resolveBaseRef verifies that ref exists locally. If not, it falls back to
