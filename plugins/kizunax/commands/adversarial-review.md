@@ -18,7 +18,7 @@ Execution mode:
 
 ### Size estimate
 - Working-tree (default): inspect `git status --short --untracked-files=all`, `git diff --shortstat --cached`, `git diff --shortstat`.
-- Branch (`--base <ref>`): `git diff --shortstat <ref>...HEAD`.
+- Branch (`--base <ref>`): `git diff --shortstat <ref>...HEAD`. If `<ref>` doesn't resolve (`git rev-parse --verify <ref>` fails), substitute with the repo's default branch from `git symbolic-ref --short refs/remotes/origin/HEAD` and rewrite the `--base` flag in the args to match; tell the user the substitution in one sentence. If even that fails (no remote), ask the user which ref to use.
 - Commit (`--commit <sha>`): `git show --shortstat <sha>`.
 - Range (`--from <a> --to <b>`): `git diff --shortstat <a>..<b>`.
 - Treat untracked files as reviewable.
