@@ -129,6 +129,53 @@ func TestAutoDetectBaseRef_FallbackToMaster(t *testing.T) {
 	}
 }
 
+// TestAutoDetectBaseRef_SkipsSelfUpstream is the regression test for the
+// v0.22.1 bug: branch `feature/compare_order_phase2` tracks
+// `origin/feature/compare_order_phase2` and the v0.20-v0.22.0 binary
+// picked that ref, producing a 0-diff "review" of a single local file.
+// After the fix, autoDetect should ignore self-upstream and fall back
+// to master.
+func TestAutoDetectBaseRef_SkipsSelfUpstream(t *testing.T) {
+	dir := initRepoOnBranch(t, t.TempDir(), "master")
+	withCwd(t, dir)
+
+	gitRun(t, dir, "checkout", "-b", "feature/x")
+	// Wire origin to point at this same repo and fetch so origin/feature/x exists.
+	gitRun(t, dir, "remote", "add", "origin", dir)
+	gitRun(t, dir, "fetch", "origin")
+	gitRun(t, dir, "branch", "--set-upstream-to=origin/feature/x", "feature/x")
+
+	got, err := autoDetectBaseRef()
+	if err != nil {
+		t.Fatalf("autoDetectBaseRef: %v", err)
+	}
+	if got != "master" {
+		t.Errorf("expected fallback 'master' (self-upstream ignored), got %q", got)
+	}
+}
+
+func TestIsSelfUpstream(t *testing.T) {
+	cases := []struct {
+		upstream, currentBranch string
+		want                    bool
+	}{
+		{"origin/feature/x", "feature/x", true},
+		{"origin/develop", "feature/x", false},
+		{"origin/master", "master", true},
+		{"upstream/main", "main", true},
+		{"feature/x", "feature/x", true},
+		{"", "feature/x", false},
+		{"origin/feature/x", "", false},
+		{"origin/feature/x-suffix", "feature/x", false},
+	}
+	for _, c := range cases {
+		got := isSelfUpstream(c.upstream, c.currentBranch)
+		if got != c.want {
+			t.Errorf("isSelfUpstream(%q, %q) = %v, want %v", c.upstream, c.currentBranch, got, c.want)
+		}
+	}
+}
+
 func TestSuggestSmallerBaseRefs_NoSuggestionWhenSmall(t *testing.T) {
 	dir := initRepoOnBranch(t, t.TempDir(), "master")
 	withCwd(t, dir)

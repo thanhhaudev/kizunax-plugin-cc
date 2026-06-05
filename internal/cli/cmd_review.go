@@ -413,21 +413,36 @@ func isWorkingTreeDirty(cwd string) (bool, bool) {
 
 // autoDetectBaseRef chooses the best base ref for a branch-diff review.
 // Precedence (first one that resolves wins):
-//  1. The current branch's upstream tracking branch (`@{upstream}`)
+//  1. The current branch's upstream tracking branch (`@{upstream}`),
+//     UNLESS it is just `<remote>/<current-branch>` — that's the same
+//     branch's remote copy, not a useful PR base. v0.22.1 fix after a
+//     real-world report: on feature/compare_order_phase2 the binary
+//     picked origin/feature/compare_order_phase2 and produced a 0-diff
+//     "review" of a single local spec file.
 //  2. Common dev branch names: develop, dev, main, master
 //  3. The repo's remote default branch from origin/HEAD
 //
 // Returns an error only if NONE of these resolve.
 func autoDetectBaseRef() (string, error) {
-	// 1. Upstream tracking branch.
+	currentBranch := ""
+	if out, err := exec.Command("git", "rev-parse", "--abbrev-ref", "HEAD").Output(); err == nil {
+		currentBranch = strings.TrimSpace(string(out))
+	}
+
+	// 1. Upstream tracking branch, unless it's just the same branch's remote.
 	if out, err := exec.Command("git", "rev-parse", "--abbrev-ref", "@{upstream}").Output(); err == nil {
 		ref := strings.TrimSpace(string(out))
-		if ref != "" && exec.Command("git", "rev-parse", "--verify", ref+"^{commit}").Run() == nil {
-			return ref, nil
+		if ref != "" && !isSelfUpstream(ref, currentBranch) {
+			if exec.Command("git", "rev-parse", "--verify", ref+"^{commit}").Run() == nil {
+				return ref, nil
+			}
 		}
 	}
-	// 2. Common dev branch names.
+	// 2. Common dev branch names — skip if it's the current branch itself.
 	for _, candidate := range []string{"develop", "dev", "main", "master"} {
+		if candidate == currentBranch {
+			continue
+		}
 		if exec.Command("git", "rev-parse", "--verify", candidate+"^{commit}").Run() == nil {
 			return candidate, nil
 		}
@@ -435,11 +450,37 @@ func autoDetectBaseRef() (string, error) {
 	// 3. Remote default branch from origin/HEAD.
 	if out, err := exec.Command("git", "symbolic-ref", "--short", "refs/remotes/origin/HEAD").Output(); err == nil {
 		ref := strings.TrimSpace(string(out))
-		if ref != "" && exec.Command("git", "rev-parse", "--verify", ref+"^{commit}").Run() == nil {
-			return ref, nil
+		if ref != "" && !isSelfUpstream(ref, currentBranch) {
+			if exec.Command("git", "rev-parse", "--verify", ref+"^{commit}").Run() == nil {
+				return ref, nil
+			}
 		}
 	}
-	return "", fmt.Errorf("could not auto-detect a base ref: no upstream tracking, no develop/dev/main/master branch, no origin/HEAD")
+	return "", fmt.Errorf("could not auto-detect a base ref: no upstream tracking (or upstream is self), no develop/dev/main/master branch, no origin/HEAD")
+}
+
+// isSelfUpstream returns true when upstream is just `<remote>/<currentBranch>`
+// — i.e., the remote copy of the same branch, which is not a useful base for
+// "what does this PR change". Examples:
+//   - upstream="origin/feature/x" currentBranch="feature/x" -> true (self)
+//   - upstream="origin/develop"   currentBranch="feature/x" -> false (real base)
+//   - upstream="origin/master"    currentBranch="master"    -> true (self, on default branch)
+func isSelfUpstream(upstream, currentBranch string) bool {
+	if currentBranch == "" {
+		return false
+	}
+	if upstream == currentBranch {
+		return true
+	}
+	// upstream typically looks like "<remote>/<branch>". Strip the first
+	// segment and compare. Handles slashes inside branch names (e.g.
+	// "feature/x") because we only trim ONE remote prefix.
+	if idx := strings.Index(upstream, "/"); idx > 0 {
+		if upstream[idx+1:] == currentBranch {
+			return true
+		}
+	}
+	return false
 }
 
 // suggestSmallerBaseRefs returns alternate base refs that produce a
@@ -455,6 +496,12 @@ func suggestSmallerBaseRefs(currentBase string, currentFileCount int) (string, i
 		// Small diff already, nothing to suggest.
 		return "", 0, false
 	}
+
+	currentBranch := ""
+	if out, err := exec.Command("git", "rev-parse", "--abbrev-ref", "HEAD").Output(); err == nil {
+		currentBranch = strings.TrimSpace(string(out))
+	}
+
 	candidates := []string{"@{upstream}", "develop", "dev", "main", "master"}
 	bestRef := ""
 	bestCount := currentFileCount
@@ -474,6 +521,12 @@ func suggestSmallerBaseRefs(currentBase string, currentFileCount int) (string, i
 			if resolved == "" || resolved == currentBase {
 				continue
 			}
+		}
+		// v0.22.1: skip self-upstream candidates. origin/feature/x while
+		// on feature/x produces a near-empty diff and is never a useful
+		// PR base; suggesting it sends users in circles.
+		if isSelfUpstream(resolved, currentBranch) {
+			continue
 		}
 		// Verify it exists.
 		if exec.Command("git", "rev-parse", "--verify", resolved+"^{commit}").Run() != nil {
