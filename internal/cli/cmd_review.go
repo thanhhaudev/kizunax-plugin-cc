@@ -5,7 +5,9 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/thanhhaudev/kizunax-plugin-cc/internal/config"
@@ -74,6 +76,17 @@ func runReviewWithMode(args []string, mode prompt.Mode) error {
 
 	if err := git.EnsureRepo(cwd); err != nil {
 		return err
+	}
+
+	if target.Kind == git.TargetBranchDiff {
+		resolved, substituted, err := resolveBaseRef(target.Base)
+		if err != nil {
+			return xerrors.User("base_ref_not_found", err.Error(), "Run `git branch -a` to see available refs.")
+		}
+		if substituted {
+			fmt.Fprintf(os.Stderr, "[info] base ref %q not found locally; using %q (repo default branch) instead\n", target.Base, resolved)
+			target.Base = resolved
+		}
 	}
 
 	cfg, err := config.Load(providerOverride)
@@ -319,6 +332,32 @@ func parseTarget(args []string) (git.Target, error) {
 		t.Kind = git.TargetWorkingTree
 	}
 	return t, nil
+}
+
+// resolveBaseRef verifies that ref exists locally. If not, it falls back to
+// the repo's default branch from origin/HEAD. Returns the resolved ref, a
+// flag indicating whether a substitution happened, and an error if no usable
+// ref could be found.
+func resolveBaseRef(ref string) (string, bool, error) {
+	if ref == "" {
+		return "", false, nil
+	}
+	if exec.Command("git", "rev-parse", "--verify", ref+"^{commit}").Run() == nil {
+		return ref, false, nil
+	}
+	out, err := exec.Command("git", "symbolic-ref", "--short", "refs/remotes/origin/HEAD").Output()
+	if err != nil {
+		return "", false, fmt.Errorf("base ref %q not found locally and no remote default branch detected", ref)
+	}
+	fallback := strings.TrimSpace(string(out))
+	fallback = strings.TrimPrefix(fallback, "origin/")
+	if fallback == "" {
+		return "", false, fmt.Errorf("base ref %q not found locally; remote default branch is empty", ref)
+	}
+	if exec.Command("git", "rev-parse", "--verify", fallback+"^{commit}").Run() != nil {
+		return "", false, fmt.Errorf("base ref %q not found locally; default branch %q also not found", ref, fallback)
+	}
+	return fallback, true, nil
 }
 
 func referencedFilePathsFromResult(r runner.Result) []string {
