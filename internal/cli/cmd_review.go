@@ -79,6 +79,19 @@ func runReviewWithMode(args []string, mode prompt.Mode) error {
 		return err
 	}
 
+	// v0.21.0 smart default: if the user passed NO target flag (parseTarget
+	// fell through to TargetWorkingTree by default) AND the working tree is
+	// clean, flip to a branch-diff review against the auto-detected base.
+	// This avoids the "nothing to review" dead end on a clean checkout —
+	// users typing `/kizunax:review` from a feature branch almost always
+	// want their PR commits reviewed, not nothing.
+	if target.Kind == git.TargetWorkingTree && !hasFlag(args, "--working-tree") {
+		if dirty, ok := isWorkingTreeDirty(cwd); ok && !dirty {
+			fmt.Fprintln(os.Stderr, "[info] no target flag and working tree is clean — defaulting to branch diff vs --base auto")
+			target = git.Target{Kind: git.TargetBranchDiff, Base: "auto", Paths: target.Paths}
+		}
+	}
+
 	if target.Kind == git.TargetBranchDiff {
 		// v0.20.0: --base auto triggers smart detection — upstream tracking
 		// branch first, then common dev branch names, finally origin/HEAD.
@@ -408,6 +421,21 @@ func countTrackedFilesCheaply(cwd string) (int, bool) {
 		return 0, false
 	}
 	return bytes.Count(out, []byte{0}), true
+}
+
+// isWorkingTreeDirty reports whether the repo at cwd has any uncommitted
+// changes (modified, staged, or untracked) per `git status --porcelain`.
+// Returns (dirty, true) on success or (false, false) on any git error.
+// On failure the v0.21.0 caller treats it as "don't change behavior" so a
+// broken/non-git workspace doesn't accidentally flip to --base auto.
+func isWorkingTreeDirty(cwd string) (bool, bool) {
+	cmd := exec.Command("git", "status", "--porcelain")
+	cmd.Dir = cwd
+	out, err := cmd.Output()
+	if err != nil {
+		return false, false
+	}
+	return len(strings.TrimSpace(string(out))) > 0, true
 }
 
 // autoDetectBaseRef chooses the best base ref for a branch-diff review.
