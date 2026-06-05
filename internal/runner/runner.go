@@ -110,26 +110,24 @@ func Run(ctx context.Context, pluginRoot string, p provider.Provider, bundle dif
 	expandCallers, expandTypeDefs, expandTests := resolveExpansion(opts, opts.WorkspaceDir)
 	anyExpand := expandCallers || expandTypeDefs || expandTests
 
-	// v0.19.1: NoExpand must actually skip enrichment, not just disable
-	// the three expansion strategies. Per llmreviewkit engine.go:117, the
-	// only gate on the WASM tree-sitter extraction (the 10+ minute CPU
-	// spin on Laravel monorepos) is an empty WorkspaceRoot. The expansion
-	// flags only affect post-extraction ranking, so leaving WorkspaceRoot
-	// non-empty kept the symbol walker running even with --no-expand.
-	// When the user (or the cmd_review.go workspace-size guard) asks to
-	// skip expansion, blank out WorkspaceRoot so the engine takes the
-	// fast no-enrichment path.
-	workspaceRoot := opts.WorkspaceRoot
-	if opts.NoExpand {
-		workspaceRoot = ""
-		if opts.Verbose {
-			fmt.Fprintln(os.Stderr, "[verbose] enrichment fully skipped (WorkspaceRoot blanked)")
-		}
+	// v0.22.0: use llmreviewkit v1.2.0's SkipEnrichment + WorkspaceFileCap
+	// fields instead of the WorkspaceRoot-blanking hack from v0.19.1. The
+	// new fields are explicit, named, documented, and don't disable other
+	// workspace-aware features (state dir, index sync, etc.) the way
+	// blanking WorkspaceRoot did.
+	//
+	// SkipEnrichment fires when the user passed --no-expand (or one of
+	// the workspace-size auto-paths set NoExpand). WorkspaceFileCap is a
+	// belt-and-suspenders: even if NoExpand isn't set, llmreviewkit will
+	// auto-degrade enrichment on monorepos > 3000 tracked files and emit
+	// its own [warn] line to stderr.
+	if opts.NoExpand && opts.Verbose {
+		fmt.Fprintln(os.Stderr, "[verbose] enrichment skipped via SkipEnrichment")
 	}
 
 	engCfg := engine.Config{
 		Provider:               p,
-		WorkspaceRoot:          workspaceRoot,
+		WorkspaceRoot:          opts.WorkspaceRoot,
 		StateWorkspaceOverride: wsOverride,
 		PromptRoot:             pluginRoot,
 		UseIndex:               useIdx,
@@ -139,6 +137,8 @@ func Run(ctx context.Context, pluginRoot string, p provider.Provider, bundle dif
 		ExpandCallers:          expandCallers,
 		ExpandTypeDefs:         expandTypeDefs,
 		ExpandTests:            expandTests,
+		SkipEnrichment:         opts.NoExpand,
+		WorkspaceFileCap:       3000,
 	}
 
 	eng, err := engine.New(engCfg)
