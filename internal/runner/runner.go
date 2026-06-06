@@ -66,6 +66,25 @@ type Options struct {
 	Mode        prompt.Mode
 	Focus       string
 	Glossary    string
+
+	// ReviewContext is the loaded body of .kizunax/review-context.md.
+	// Empty if no file was found. Passed verbatim to llmreviewkit's
+	// ReviewOptions.ReviewContext.
+	ReviewContext string
+
+	// ContextPath is the absolute path of the loaded review-context.md.
+	// Empty if no file was found. Used for verbose logging.
+	ContextPath string
+
+	// ContextModTime is the file mtime. Zero if no file was found.
+	// Surfaces in stderr stale warnings.
+	ContextModTime time.Time
+
+	// InlineContext is per-review additional context (from --context-text
+	// flag, base64-decoded). Concatenated AFTER ReviewContext before
+	// passing to the engine.
+	InlineContext string
+
 	Model       string
 	Temperature float64
 	MaxTokens   int
@@ -192,12 +211,15 @@ func Run(ctx context.Context, pluginRoot string, p provider.Provider, bundle dif
 	diffPaths := diff.Paths(bundle)
 
 	rOpts := engine.ReviewOptions{
-		Mode:        opts.Mode,
-		Focus:       opts.Focus,
-		Glossary:    opts.Glossary,
-		Model:       opts.Model,
-		Temperature: opts.Temperature,
-		MaxTokens:   opts.MaxTokens,
+		Mode:           opts.Mode,
+		Focus:          opts.Focus,
+		Glossary:       opts.Glossary,
+		ReviewContext:  combinedContext(opts.ReviewContext, opts.InlineContext),
+		ContextPath:    opts.ContextPath,
+		ContextModTime: opts.ContextModTime,
+		Model:          opts.Model,
+		Temperature:    opts.Temperature,
+		MaxTokens:      opts.MaxTokens,
 	}
 	res, err := eng.Review(ctx, bundle, rOpts)
 	if err != nil {
@@ -326,6 +348,22 @@ func enrichBudgetFor(anyExpand bool) int {
 		return 0
 	}
 	return 32 * 1024
+}
+
+// combinedContext concatenates the file-based review-context with the
+// per-review inline context. Inline context is appended below the file
+// content with a separator + heading. Either may be empty.
+func combinedContext(file, inline string) string {
+	if file == "" && inline == "" {
+		return ""
+	}
+	if inline == "" {
+		return file
+	}
+	if file == "" {
+		return "## Per-review notes\n\n" + inline
+	}
+	return file + "\n\n---\n\n## Per-review notes\n\n" + inline
 }
 
 // useIndexResolver returns true if v0.13 index-backed resolver should be
