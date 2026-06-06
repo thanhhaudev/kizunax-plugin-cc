@@ -6,7 +6,7 @@ import (
 	xerrors "github.com/thanhhaudev/llmreviewkit/errors"
 )
 
-const Version = "0.27.0"
+const Version = "0.27.1"
 
 func Dispatch(args []string) error {
 	if len(args) == 0 {

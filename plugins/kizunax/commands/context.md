@@ -1,7 +1,7 @@
 ---
 description: Build or refresh .kizunax/review-context.md from project sources (CLAUDE.md, memory, conversation)
 argument-hint: '[--workspace <path>]'
-disable-model-invocation: false
+disable-model-invocation: true
 allowed-tools: Read, Bash(ls:*), Bash(git:*), Write, AskUserQuestion
 ---
 
@@ -36,10 +36,13 @@ read as best-effort, never block on absent files.
      `/Users/haunguyen/Documents/Bear/Oneplat-B2B-System` →
      `-Users-haunguyen-Documents-Bear-Oneplat-B2B-System`.
    - Path: `~/.claude/projects/<slug>/memory/`
-   - Use `Bash(ls)` to list `project_*.md` files. Skip `feedback_*.md`,
-     `user_*.md`, `reference_*.md`, and `MEMORY.md`.
-   - `Read` each file; parse YAML frontmatter; include only files where
-     `metadata.type` is `project`.
+   - First check existence: `Bash(ls -d ~/.claude/projects/<slug>/memory/ 2>/dev/null)`.
+     If the path does not exist (common for new or low-traffic workspaces),
+     skip this source silently and continue to source #5.
+   - If dir exists, use `Bash(ls)` to list `project_*.md` files only. Filter by
+     filename prefix `project_` — this is the canonical filter, NOT by YAML
+     frontmatter. Skip `feedback_*.md`, `user_*.md`, `reference_*.md`, and
+     `MEMORY.md` by NOT matching them.
 
 5. **Cross-project memory references** — solves the "memory at conversation
    location" issue (a `project_oneplat_workflow.md` may live in the kizunax
@@ -47,9 +50,15 @@ read as best-effort, never block on absent files.
    - List `~/.claude/projects/` with `Bash(ls)`.
    - For each project dir, list its `memory/project_*.md` files.
    - For each candidate, `Read` enough to check the `description` field.
-   - Include the file IF the description mentions the current workspace
-     name OR cwd path basename.
-   - Hard cap: scan up to 20 dirs, 5 candidate files per dir.
+   - Match rule: include the file IF its `description` field contains the
+     workspace's directory basename as a substring (case-sensitive,
+     basename ≥ 4 chars). Skip basenames shorter than 4 chars (e.g. `api`,
+     `web`, `cli`) — too ambiguous, would cause false matches.
+     - Example: cwd `/Users/haunguyen/Documents/Bear/Oneplat-B2B-System` →
+       basename `Oneplat-B2B-System` → include any project_*.md whose
+       description contains exact string `Oneplat-B2B-System`.
+   - Hard cap: scan up to 20 dirs, 5 candidate files per dir. Stop at
+     first 3 matches to avoid blowing prompt budget.
 
 6. **Recent git activity** — `Bash(git log --oneline -20)` to spot current
    work focus.
@@ -96,6 +105,10 @@ Produce a markdown document with this exact structure:
 
 Constraints:
 - Total length under 6 KiB (~3000 tokens). Be specific, not verbose.
+- **Bullet count target**: 6-10 most-impactful items per section. Quality over
+  completeness. If you have 15 candidate bullets, pick the 8 with highest
+  impact on reducing false-positive review findings. Omit speculative or
+  low-value items.
 - Every bullet should be actionable — "the reviewer should skip X" or
   "treat Y as intentional". Avoid vague statements like "be aware of Z".
 - Include HTML comment attribution lines so the user can verify provenance.
