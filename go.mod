@@ -8,7 +8,3 @@ require (
 )
 
 require github.com/thanhhaudev/llmreviewkit v1.5.0
-
-replace github.com/thanhhaudev/llmreviewkit => ../llmreviewkit
-
-replace github.com/thanhhaudev/phpsyms => ../phpsyms
