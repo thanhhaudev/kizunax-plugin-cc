@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"os"
@@ -11,17 +12,17 @@ import (
 	"time"
 
 	"github.com/thanhhaudev/kizunax-plugin-cc/internal/config"
-	"github.com/thanhhaudev/llmreviewkit/diff"
-	xerrors "github.com/thanhhaudev/llmreviewkit/errors"
-	"github.com/thanhhaudev/llmreviewkit/git"
-	"github.com/thanhhaudev/llmreviewkit/glossary"
 	"github.com/thanhhaudev/kizunax-plugin-cc/internal/job"
-	"github.com/thanhhaudev/llmreviewkit/prompt"
-	"github.com/thanhhaudev/llmreviewkit/render"
 	"github.com/thanhhaudev/kizunax-plugin-cc/internal/runner"
 	"github.com/thanhhaudev/kizunax-plugin-cc/internal/state"
 	"github.com/thanhhaudev/kizunax-plugin-cc/internal/usage"
 	"github.com/thanhhaudev/llmreviewkit/bundlelog"
+	"github.com/thanhhaudev/llmreviewkit/diff"
+	xerrors "github.com/thanhhaudev/llmreviewkit/errors"
+	"github.com/thanhhaudev/llmreviewkit/git"
+	"github.com/thanhhaudev/llmreviewkit/glossary"
+	"github.com/thanhhaudev/llmreviewkit/prompt"
+	"github.com/thanhhaudev/llmreviewkit/render"
 )
 
 // kindFromMode maps a prompt mode to the corresponding job.Kind.
@@ -63,6 +64,21 @@ func runReviewWithMode(args []string, mode prompt.Mode) error {
 		return xerrors.User("conflict_summary_flags",
 			"--summary and --no-summary are mutually exclusive", "")
 	}
+
+	// v0.26.0: new flags for fan-out dispatch.
+	strategy := flagValue(args, "--strategy")
+	if strategy == "" {
+		strategy = "auto"
+	}
+	switch strategy {
+	case "auto", "single", "fanout":
+		// ok
+	default:
+		return xerrors.User("invalid_strategy",
+			fmt.Sprintf("unknown --strategy=%q; want auto|single|fanout", strategy), "")
+	}
+	modelOverride := flagValue(args, "--model")
+	jsonOutput := hasFlag(args, "--json")
 
 	target, err := parseTarget(args)
 	if err != nil {
@@ -127,6 +143,12 @@ func runReviewWithMode(args []string, mode prompt.Mode) error {
 	if err != nil {
 		return err
 	}
+	if modelOverride != "" {
+		cfg.Model = modelOverride
+		if verbose {
+			fmt.Fprintf(os.Stderr, "[verbose] --model override: %s\n", modelOverride)
+		}
+	}
 
 	gloss, glossErr := glossary.Load(cwd)
 	if glossErr != nil {
@@ -180,6 +202,45 @@ func runReviewWithMode(args []string, mode prompt.Mode) error {
 		fmt.Fprintln(os.Stderr, "[warn] Tip: re-run with --paths <dir1,dir2,...> to narrow scope (e.g. --paths app/Http,app/Services).")
 	}
 
+	// v0.26.0: resolve ctx + wsDir early so the fanout path can use them.
+	ctx := context.Background()
+	var wsDir state.WorkspaceDir
+	if ws, wsErr := state.Resolve(cwd); wsErr == nil {
+		wsDir = ws
+	}
+
+	// v0.26.0: decide fan-out based on --strategy + diff size.
+	// Workers (--json) never recursively fan-out — prevents infinite spawning.
+	shouldFanout := false
+	if !jsonOutput {
+		switch strategy {
+		case "fanout":
+			shouldFanout = true
+		case "auto":
+			// Fan-out when diff is large enough to warrant parallel review.
+			// Threshold: >150 KB OR >100 files.
+			fileCount := countChangedFiles(cwd, target)
+			if bundle.TotalBytes > 150*1024 || fileCount > 100 {
+				shouldFanout = true
+			}
+		}
+	}
+
+	if shouldFanout {
+		return runFanoutReview(ctx, runFanoutArgs{
+			cwd:          cwd,
+			target:       target,
+			bundle:       bundle,
+			cfg:          cfg,
+			mode:         mode,
+			focus:        focus,
+			verbose:      verbose,
+			quiet:        quiet,
+			originalArgs: args,
+			wsDir:        wsDir,
+		})
+	}
+
 	// v0.20.0 baseline-mismatch warning: if the user passed an explicit
 	// --base and the resulting diff is large, check whether an alternate
 	// base (upstream, develop, dev, main) would produce a meaningfully
@@ -206,11 +267,6 @@ func runReviewWithMode(args []string, mode prompt.Mode) error {
 		return err
 	}
 
-	var wsDir state.WorkspaceDir
-	if ws, wsErr := state.Resolve(cwd); wsErr == nil {
-		wsDir = ws
-	}
-
 	var bundleSink io.Writer
 	if os.Getenv("KIZUNAX_BUNDLE_LOG") == "1" && wsDir.Root != "" {
 		logPath := filepath.Join(wsDir.Root, bundlelog.LogName)
@@ -228,29 +284,28 @@ func runReviewWithMode(args []string, mode prompt.Mode) error {
 		}
 	}
 
-	ctx := context.Background()
 	start := time.Now()
 	result, runErr := runner.Run(ctx, pluginRoot, p, bundle, runner.Options{
-		Mode:          mode,
-		Focus:         focus,
-		Glossary:      gloss.Content,
-		Model:         cfg.Model,
-		Temperature:   cfg.Temperature,
-		MaxTokens:     cfg.MaxTokens,
-		Summary:       summary,
-		NoSummary:     noSummary,
-		HelperCfg:     cfg.Helper,
-		HelperAPIKey:  cfg.HelperAPIKey,
-		WorkspaceDir:  wsDir,
-		WorkspaceRoot: cwd,
-		Verbose:       verbose,
-		ForceRescan:   rescan,
-		ExpandCallers: expandCallers,
+		Mode:           mode,
+		Focus:          focus,
+		Glossary:       gloss.Content,
+		Model:          cfg.Model,
+		Temperature:    cfg.Temperature,
+		MaxTokens:      cfg.MaxTokens,
+		Summary:        summary,
+		NoSummary:      noSummary,
+		HelperCfg:      cfg.Helper,
+		HelperAPIKey:   cfg.HelperAPIKey,
+		WorkspaceDir:   wsDir,
+		WorkspaceRoot:  cwd,
+		Verbose:        verbose,
+		ForceRescan:    rescan,
+		ExpandCallers:  expandCallers,
 		ExpandTypeDefs: expandTypeDefs,
-		ExpandTests:   expandTests,
-		ExpandAll:     expandAll,
-		NoExpand:      noExpand,
-		BundleLogSink: bundleSink,
+		ExpandTests:    expandTests,
+		ExpandAll:      expandAll,
+		NoExpand:       noExpand,
+		BundleLogSink:  bundleSink,
 	})
 	end := time.Now()
 	dur := end.Sub(start)
@@ -316,6 +371,17 @@ func runReviewWithMode(args []string, mode prompt.Mode) error {
 
 	if runErr != nil {
 		return runErr
+	}
+
+	// v0.26.0: --json mode — worker subprocess path. Emit ReviewResult as JSON
+	// to stdout so the parent fan-out process can decode it. Skip usage refresh
+	// and footer; the parent handles those once after merging all workers.
+	if jsonOutput {
+		enc := json.NewEncoder(os.Stdout)
+		if err := enc.Encode(result.Review); err != nil {
+			return xerrors.Internal("json_encode", "could not encode review result", err)
+		}
+		return nil
 	}
 
 	out := render.RenderReview(result.Review, bundle, result.TotalTokens, mode)
@@ -580,6 +646,56 @@ func referencedFilePathsFromResult(r runner.Result) []string {
 	out := make([]string, len(r.ReferencedFiles))
 	for i, f := range r.ReferencedFiles {
 		out[i] = f.Path
+	}
+	return out
+}
+
+// countChangedFiles returns the number of changed files for target using git.
+// Used only for the auto-strategy threshold; diff.Collect is authoritative for
+// content. Returns 0 on error (caller falls back to byte-size threshold only).
+func countChangedFiles(cwd string, target git.Target) int {
+	var cmd *exec.Cmd
+	switch target.Kind {
+	case git.TargetBranchDiff:
+		cmd = exec.Command("git", "diff", "--name-only", target.Base+"...HEAD")
+	case git.TargetCommit:
+		cmd = exec.Command("git", "diff-tree", "--no-commit-id", "--name-only", "-r", target.Commit)
+	case git.TargetCommitRange:
+		cmd = exec.Command("git", "diff", "--name-only", target.FromSHA+".."+target.ToSHA)
+	default:
+		// TargetWorkingTree
+		cmd = exec.Command("git", "diff", "--name-only", "HEAD")
+	}
+	cmd.Dir = cwd
+	out, err := cmd.Output()
+	if err != nil {
+		return 0
+	}
+	trimmed := strings.TrimSpace(string(out))
+	if trimmed == "" {
+		return 0
+	}
+	return strings.Count(trimmed, "\n") + 1
+}
+
+// filterStrategyFlag removes --strategy and its value from args.
+// Used when falling back to single-review from within fan-out logic.
+func filterStrategyFlag(args []string) []string {
+	var out []string
+	skipNext := false
+	for _, a := range args {
+		if skipNext {
+			skipNext = false
+			continue
+		}
+		if a == "--strategy" {
+			skipNext = true
+			continue
+		}
+		if strings.HasPrefix(a, "--strategy=") {
+			continue
+		}
+		out = append(out, a)
 	}
 	return out
 }
