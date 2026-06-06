@@ -45,12 +45,31 @@ Map the answer to a flag and append to args:
 
 ### Step 2 — Invoke the binary
 
+Pick execution mode based on the effective `--strategy`:
+- `--strategy=fanout` → run in BACKGROUND (large diff, 5–40 min wall time, do not block the conversation)
+- `--strategy=auto` or `--strategy=single` → run in FOREGROUND (small/medium diff, typically 30 s – 3 min)
+
+Foreground:
 ```bash
 "${CLAUDE_PLUGIN_ROOT}/scripts/run.sh" "Binary missing — run /kizunax:setup to build it." adversarial-review $ARGUMENTS
 ```
 
-Return the binary's stdout VERBATIM. Do not paraphrase, do not summarize, do
-not add commentary above or below.
+Background:
+```typescript
+Bash({
+  command: `"${CLAUDE_PLUGIN_ROOT}/scripts/run.sh" "Binary missing — run /kizunax:setup to build it." adversarial-review $ARGUMENTS`,
+  description: "Kizunax adversarial review (fan-out)",
+  run_in_background: true
+})
+```
+After spawning in background, tell the user one line:
+"Kizunax adversarial fan-out review started in the background. Claude will
+pick up the output automatically when it finishes; you can also check
+`/kizunax:status` for progress."
+
+Return the binary's stdout VERBATIM (foreground) or the background-task
+notification line (background). Do not paraphrase, do not summarize, do not
+add commentary above or below.
 
 ## Core constraint
 - This command is review-only. Do not fix issues, apply patches, or suggest
