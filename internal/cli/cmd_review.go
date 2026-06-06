@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -17,6 +18,7 @@ import (
 	"github.com/thanhhaudev/kizunax-plugin-cc/internal/state"
 	"github.com/thanhhaudev/kizunax-plugin-cc/internal/usage"
 	"github.com/thanhhaudev/llmreviewkit/bundlelog"
+	llmcontext "github.com/thanhhaudev/llmreviewkit/context"
 	"github.com/thanhhaudev/llmreviewkit/diff"
 	xerrors "github.com/thanhhaudev/llmreviewkit/errors"
 	"github.com/thanhhaudev/llmreviewkit/git"
@@ -79,6 +81,17 @@ func runReviewWithMode(args []string, mode prompt.Mode) error {
 	}
 	modelOverride := flagValue(args, "--model")
 	jsonOutput := hasFlag(args, "--json")
+
+	contextTextRaw := flagValue(args, "--context-text")
+	var inlineContext string
+	if contextTextRaw != "" {
+		if decoded, derr := base64.StdEncoding.DecodeString(contextTextRaw); derr == nil {
+			inlineContext = string(decoded)
+		} else {
+			// Graceful fallback: treat as plain text.
+			inlineContext = contextTextRaw
+		}
+	}
 
 	target, err := parseTarget(args)
 	if err != nil {
@@ -168,6 +181,33 @@ func runReviewWithMode(args []string, mode prompt.Mode) error {
 	}
 	if gloss.Truncated {
 		fmt.Fprintf(os.Stderr, "[warn] glossary truncated to %d bytes: %s\n", len(gloss.Content), gloss.Path)
+	}
+
+	revCtx, ctxErr := llmcontext.Load(cwd)
+	if ctxErr != nil {
+		fmt.Fprintf(os.Stderr, "[warn] review-context: %v\n", ctxErr)
+	}
+	if revCtx.Path == "" {
+		fmt.Fprintln(os.Stderr, "[info] No review-context.md found. Run /kizunax:context to generate one.")
+	} else if time.Since(revCtx.ModTime) > 14*24*time.Hour {
+		days := int(time.Since(revCtx.ModTime).Hours() / 24)
+		fmt.Fprintf(os.Stderr, "[warn] review-context.md is %d days old. Run /kizunax:context to refresh.\n", days)
+	}
+	if verbose {
+		if revCtx.Path == "" {
+			fmt.Fprintln(os.Stderr, "[verbose] review-context: no file in workspace")
+		} else {
+			suffix := ""
+			if revCtx.Truncated {
+				suffix = " (truncated)"
+			}
+			fmt.Fprintf(os.Stderr, "[verbose] review-context: loaded %d chars from %s%s\n",
+				len(revCtx.Content), revCtx.Path, suffix)
+		}
+		if inlineContext != "" {
+			fmt.Fprintf(os.Stderr, "[verbose] review-context: %d chars inline via --context-text\n",
+				len(inlineContext))
+		}
 	}
 
 	if verbose {
@@ -289,6 +329,10 @@ func runReviewWithMode(args []string, mode prompt.Mode) error {
 		Mode:           mode,
 		Focus:          focus,
 		Glossary:       gloss.Content,
+		ReviewContext:  revCtx.Content,
+		ContextPath:    revCtx.Path,
+		ContextModTime: revCtx.ModTime,
+		InlineContext:  inlineContext,
 		Model:          cfg.Model,
 		Temperature:    cfg.Temperature,
 		MaxTokens:      cfg.MaxTokens,
