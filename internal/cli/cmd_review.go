@@ -62,6 +62,7 @@ func runReviewWithMode(args []string, mode prompt.Mode) error {
 	expandTests := hasFlag(args, "--expand-tests")
 	expandAll := hasFlag(args, "--expand-all")
 	noExpand := hasFlag(args, "--no-expand")
+	useIndex := hasFlag(args, "--use-index")
 	if summary && noSummary {
 		return xerrors.User("conflict_summary_flags",
 			"--summary and --no-summary are mutually exclusive", "")
@@ -222,6 +223,11 @@ func runReviewWithMode(args []string, mode prompt.Mode) error {
 		fmt.Fprintf(os.Stderr, "[verbose] mode=%s provider=%s model=%s base_url=%s\n",
 			mode, cfg.Provider, cfg.Model, cfg.BaseURL)
 		fmt.Fprintf(os.Stderr, "[verbose] target=%s\n", target.Label())
+		if useIndex {
+			fmt.Fprintln(os.Stderr, "[verbose] --use-index requested; runner will try v2 resolver and fall back to v1 if no index")
+		} else {
+			fmt.Fprintln(os.Stderr, "[verbose] --use-index not set; v1 regex resolver (use `kizunax index sync` then re-run with --use-index for v2)")
+		}
 	}
 
 	bundle, err := diff.Collect(cwd, target)
@@ -357,6 +363,8 @@ func runReviewWithMode(args []string, mode prompt.Mode) error {
 		ExpandTests:    expandTests,
 		ExpandAll:      expandAll,
 		NoExpand:       noExpand,
+		UseIndex:       useIndex,
+		Paths:          target.Paths,
 		BundleLogSink:  bundleSink,
 	})
 	end := time.Now()
