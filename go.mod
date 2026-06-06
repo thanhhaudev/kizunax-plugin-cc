@@ -7,4 +7,4 @@ require (
 	github.com/thanhhaudev/phpsyms v0.2.1 // indirect
 )
 
-require github.com/thanhhaudev/llmreviewkit v1.5.2
+require github.com/thanhhaudev/llmreviewkit v1.5.3

@@ -163,7 +163,11 @@ func runReviewWithMode(args []string, mode prompt.Mode) error {
 		}
 	}
 
-	gloss, glossErr := glossary.Load(cwd)
+	gloss, glossErr := glossary.Load(cwd, []string{
+		filepath.Join(".kizunax", "glossary.md"),
+		filepath.Join("docs", "glossary.md"),
+		"GLOSSARY.md",
+	})
 	if glossErr != nil {
 		fmt.Fprintf(os.Stderr, "[warn] glossary: %v\n", glossErr)
 	}
@@ -183,7 +187,11 @@ func runReviewWithMode(args []string, mode prompt.Mode) error {
 		fmt.Fprintf(os.Stderr, "[warn] glossary truncated to %d bytes: %s\n", len(gloss.Content), gloss.Path)
 	}
 
-	revCtx, ctxErr := llmcontext.Load(cwd)
+	revCtx, ctxErr := llmcontext.Load(cwd, []string{
+		filepath.Join(".kizunax", "review-context.md"),
+		filepath.Join("docs", "review-context.md"),
+		"REVIEW-CONTEXT.md",
+	})
 	if ctxErr != nil {
 		fmt.Fprintf(os.Stderr, "[warn] review-context: %v\n", ctxErr)
 	}

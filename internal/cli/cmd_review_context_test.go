@@ -14,7 +14,11 @@ import (
 
 func TestLLMContext_Load_MissingFile(t *testing.T) {
 	dir := t.TempDir()
-	c, err := llmcontext.Load(dir)
+	c, err := llmcontext.Load(dir, []string{
+		filepath.Join(".kizunax", "review-context.md"),
+		filepath.Join("docs", "review-context.md"),
+		"REVIEW-CONTEXT.md",
+	})
 	if err != nil {
 		t.Fatalf("err: %v", err)
 	}
@@ -38,7 +42,11 @@ func TestLLMContext_Load_StaleDetection(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	c, _ := llmcontext.Load(dir)
+	c, _ := llmcontext.Load(dir, []string{
+		filepath.Join(".kizunax", "review-context.md"),
+		filepath.Join("docs", "review-context.md"),
+		"REVIEW-CONTEXT.md",
+	})
 	if c.ModTime.IsZero() {
 		t.Fatalf("expected non-zero ModTime")
 	}
