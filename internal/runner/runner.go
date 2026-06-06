@@ -22,6 +22,7 @@ import (
 	"github.com/thanhhaudev/llmreviewkit/provider"
 	"github.com/thanhhaudev/llmreviewkit/schema"
 	"github.com/thanhhaudev/llmreviewkit/statedir"
+	"github.com/thanhhaudev/llmreviewkit/symbols"
 )
 
 // resolveExtractionPolicy reads KIZUNAX_PHP_EXTRACTOR from the environment
@@ -173,6 +174,19 @@ func Run(ctx context.Context, pluginRoot string, p provider.Provider, bundle dif
 		return Result{}, xerrors.Internal("engine_new", "engine construction failed", err)
 	}
 
+	// Wire a per-review extract observer for verbose telemetry. The observer is
+	// process-singleton (one slot in symbols package) — kizunax owns the slot
+	// during a Review and tears it down on exit so multiple invocations don't
+	// leak state.
+	extractCounts := map[string]int{}
+	extractTotalNanos := map[string]int64{}
+	symbols.SetExtractObserver(func(ev symbols.ExtractEvent) {
+		name := symbols.ExtractStrategyName(ev.Strategy)
+		extractCounts[name]++
+		extractTotalNanos[name] += ev.Duration.Nanoseconds()
+	})
+	defer symbols.SetExtractObserver(nil)
+
 	// Bundle is consumed (engine.Review may mutate it). Capture diff paths
 	// BEFORE Review for use in canonicalizeFindings below.
 	diffPaths := diff.Paths(bundle)
@@ -188,6 +202,19 @@ func Run(ctx context.Context, pluginRoot string, p provider.Provider, bundle dif
 	res, err := eng.Review(ctx, bundle, rOpts)
 	if err != nil {
 		return Result{}, err
+	}
+
+	if opts.Verbose {
+		// Deterministic order so output is testable.
+		order := []string{"gonative", "treesitter", "regex", "auto", "unknown"}
+		for _, name := range order {
+			count := extractCounts[name]
+			if count == 0 {
+				continue
+			}
+			avgMs := float64(extractTotalNanos[name]) / float64(count) / 1e6
+			fmt.Fprintf(os.Stderr, "[verbose] PHP extractor: %s, %d files, avg %.1fms/file\n", name, count, avgMs)
+		}
 	}
 
 	// KizunaX-specific layering 1: canonicalize finding paths so TL;DR /
