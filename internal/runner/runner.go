@@ -7,21 +7,47 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/thanhhaudev/kizunax-plugin-cc/internal/config"
+	"github.com/thanhhaudev/kizunax-plugin-cc/internal/helper"
+	"github.com/thanhhaudev/kizunax-plugin-cc/internal/state"
+	"github.com/thanhhaudev/kizunax-plugin-cc/internal/usage"
 	"github.com/thanhhaudev/llmreviewkit/diff"
 	"github.com/thanhhaudev/llmreviewkit/engine"
 	xerrors "github.com/thanhhaudev/llmreviewkit/errors"
-	"github.com/thanhhaudev/kizunax-plugin-cc/internal/helper"
 	"github.com/thanhhaudev/llmreviewkit/index"
 	"github.com/thanhhaudev/llmreviewkit/prompt"
 	"github.com/thanhhaudev/llmreviewkit/provider"
 	"github.com/thanhhaudev/llmreviewkit/schema"
-	"github.com/thanhhaudev/kizunax-plugin-cc/internal/state"
 	"github.com/thanhhaudev/llmreviewkit/statedir"
-	"github.com/thanhhaudev/kizunax-plugin-cc/internal/usage"
 )
+
+// resolveExtractionPolicy reads KIZUNAX_PHP_EXTRACTOR from the environment
+// and returns a corresponding ExtractionPolicy. Unset or unknown values map
+// to engine.DefaultExtractionPolicy (Auto strategy + 60s timeout + 64 KiB
+// size cap).
+//
+// Recognized values (case-insensitive):
+//   - "" / "auto"      → StrategyAuto    (default)
+//   - "gonative"       → StrategyGoNative (force phpsyms)
+//   - "treesitter"     → StrategyTreeSitter (force tree-sitter)
+//   - "regex"          → StrategyRegex   (force regex fallback)
+func resolveExtractionPolicy() engine.ExtractionPolicy {
+	p := engine.DefaultExtractionPolicy()
+	switch strings.ToLower(strings.TrimSpace(os.Getenv("KIZUNAX_PHP_EXTRACTOR"))) {
+	case "", "auto":
+		p.PHP = engine.StrategyAuto
+	case "gonative":
+		p.PHP = engine.StrategyGoNative
+	case "treesitter":
+		p.PHP = engine.StrategyTreeSitter
+	case "regex":
+		p.PHP = engine.StrategyRegex
+	}
+	return p
+}
 
 type Result struct {
 	Review       schema.ReviewResult
@@ -139,6 +165,7 @@ func Run(ctx context.Context, pluginRoot string, p provider.Provider, bundle dif
 		ExpandTests:            expandTests,
 		SkipEnrichment:         opts.NoExpand,
 		WorkspaceFileCap:       3000,
+		ExtractionPolicy:       resolveExtractionPolicy(),
 	}
 
 	eng, err := engine.New(engCfg)
