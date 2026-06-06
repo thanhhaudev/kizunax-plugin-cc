@@ -42,7 +42,7 @@ Examples:
 | Flag | Since | Default | Description |
 |---|---|---|---|
 | `--strategy auto\|single\|fanout` | v0.26.0 | `auto` | Routes diff through binary's internal fan-out for large diffs. `auto` decides per size (>150 KB or >100 files → fan-out). `single` forces one LLM call. `fanout` forces parallel buckets even on small diffs. |
-| `--paths a,b/` | v0.1 | unset | Comma-separated path filter. Limits the diff scope (not the resolver walk yet — slated for v1.5.3). Use to narrow scope on monorepos. |
+| `--paths a,b/` | v0.1 (resolver scope v0.28.0) | unset | Comma-separated path filter. Limits both the diff scope AND, since v0.28.0, the resolver workspace walk to the union of these subtrees. Use on monorepos to avoid the 3000-file `WorkspaceFileCap` auto-skip. |
 | `--focus "text"` | v0.1 | unset | Focus hint prepended into the prompt. Trailing free-form text after target flags is also captured as focus (e.g., `/kizunax:adversarial-review --base main challenge the cache design`). |
 | `--model <name>` | v0.27.0 | (from config) | Override the configured model for one invocation. Example: `--model claude-opus-4-7`. |
 | `--add-context-prompt` | v0.27.0 | off | Slash command asks one AskUserQuestion for per-review inline context, base64-encodes the answer into `--context-text`. NOT persisted to `.kizunax/review-context.md` — that's the role of `/kizunax:context`. |
@@ -81,6 +81,7 @@ configurable override is on the roadmap).
 | `--expand-tests` | v0.11 | off | Include test files touching diff symbols. |
 | `--expand-all` | v0.11 | off | Enable all three expansion strategies. |
 | `--rescan` | v0.13 | off | Force re-scan of workspace index even when warm. |
+| `--use-index` | v0.28.0 | off | Opt into the v2 AST-backed resolver. Requires a pre-built index — run `kizunax index sync` once per workspace, then every subsequent `/kizunax:review --use-index` uses the AST resolver instead of v1 regex BFS. Kill switch: `KIZUNAX_DISABLE_INDEX=1`. Env fallback: `KIZUNAX_USE_INDEX=1`. On big monorepos this is the path to fast, accurate enrichment. |
 | `--summary` / `--no-summary` | v0.11 | (mode-dependent) | Force TL;DR summary on / off. Mutually exclusive. |
 
 Examples:
@@ -133,6 +134,7 @@ Used by the slash command layer; users normally don't pass these directly.
 | `.kizunax/review-context.md` | Every review | Behavioral hints injected above the system prompt. Build via `/kizunax:context`. v0.27.0+. |
 | `.kizunax/glossary.md` | Every review | Project vocabulary injected as "Project glossary" section. v0.11+. |
 | `CLAUDE.md` (workspace root) | `/kizunax:context` only | One of the synthesis sources when generating `review-context.md`. Not read directly by `/kizunax:review`. |
+| `~/.kizunax/state/<ws-hash>/index/index.json` | `/kizunax:review --use-index` | When set, runner loads this AST symbol index instead of running the v1 regex BFS. Build via `kizunax index sync` (one-shot) or let `--rescan` rebuild on the next review. Stale-threshold 24h. |
 
 ---
 
