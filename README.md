@@ -41,7 +41,7 @@ Mechanism, not features:
 | Diff handling | pre-packed bundle (diff + optional refs) | agent reads files on demand |
 | Output enforcement | enforced JSON schema / `tool_use` | Codex CLI structured output |
 | Token budget | capped at `EnrichBudget` (32 / 96 KiB) | no cap |
-| Latency | ~one inference call | varies with task; can be minutes |
+| Latency | ~one inference call (or N parallel calls with `--strategy=fanout` on large diffs) | varies with task; can be minutes |
 
 Use kizunax for fast, predictable reviews of a specific change; use codex when the model needs to read beyond the diff.
 
@@ -92,8 +92,9 @@ Other flags `./setup.sh` accepts: `--status`, `--enable-stop-gate`,
 
 | Command | What it does |
 |---|---|
-| `/kizunax:review` | Review changes against working tree, a branch base, a commit, or a range. `--wait` / `--background`, `--paths`, `--focus`. |
-| `/kizunax:adversarial-review` | Same targets as `review`, but the model challenges the design and looks for risks. Accepts trailing focus text. |
+| `/kizunax:review` | Review changes (working tree, branch base, commit, or range). Flags: `--strategy auto\|single\|fanout`, `--paths`, `--focus`, `--model`, `--add-context-prompt`. Accepts trailing free-form text as focus. |
+| `/kizunax:adversarial-review` | Same as `review` (all flags + trailing focus text apply), but the model challenges the design and looks for risks. |
+| `/kizunax:context` | Build or refresh `.kizunax/review-context.md` by synthesizing CLAUDE.md + memory + conversation. v0.27.0+. |
 | `/kizunax:status` | List background review jobs. |
 | `/kizunax:result <id>` | Print the result of a finished job. |
 | `/kizunax:cancel <id>` | Cancel a running background job. |
@@ -102,7 +103,10 @@ Other flags `./setup.sh` accepts: `--status`, `--enable-stop-gate`,
 | `/kizunax:index <sub>` | Manage the workspace AST index. |
 | `/kizunax:expansion <sub>` | Toggle bundle expansion strategies. |
 
-Per-command flags in `plugins/kizunax/commands/`.
+`--strategy=auto` (default since v0.26.0) routes large diffs through the
+binary's internal fan-out (parallel review buckets merged into one report),
+keeping the slash-command bash count to 1 per review. Full flag detail in
+[docs/flag-reference.md](docs/flag-reference.md).
 
 ## Examples
 
@@ -110,20 +114,45 @@ Per-command flags in `plugins/kizunax/commands/`.
 # Review the working tree (default target)
 /kizunax:review
 
-# Review the latest commit, in the background
-/kizunax:review --commit HEAD --background
-/kizunax:status
-/kizunax:result <id>
-
-# Review the current branch against main
-/kizunax:review --base main
+# Review the current branch against develop (git-flow base)
+/kizunax:review --base develop
 
 # Review only specific paths
 /kizunax:review --paths internal/auth,internal/handlers --focus "race conditions"
 
 # Adversarial review with trailing focus text
 /kizunax:adversarial-review --base main challenge the cache invalidation strategy
+
+# Force fan-out for a large diff (parallel buckets + Anthropic)
+/kizunax:review --base develop --strategy=fanout
+
+# Override the configured model for one invocation
+/kizunax:review --model claude-opus-4-7
+
+# Per-review inline context hint (asks once via AskUserQuestion)
+/kizunax:review --base develop --add-context-prompt
+
+# Build .kizunax/review-context.md from CLAUDE.md + memory + conversation
+/kizunax:context
 ```
+
+## Configuration
+
+Three files / one env var shape kizunax's behavior on top of
+`~/.kizunax/config.json` (provider + API keys, written by `/kizunax:setup`):
+
+| File | Purpose |
+|---|---|
+| `.kizunax/review-context.md` | Auto-injected above the system prompt: intentional patterns the reviewer should not flag, suppressed categories, business notes. Generate via `/kizunax:context`. v0.27.0+. |
+| `.kizunax/glossary.md` | Project-specific vocabulary auto-injected as the "Project glossary" section. v0.11+. |
+| `CLAUDE.md` (workspace root) | Already a Claude Code convention; `/kizunax:context` reads it as one of the sources when synthesizing review context. |
+
+Environment variable:
+
+- `KIZUNAX_PHP_EXTRACTOR=auto|phpsyms|treesitter|regex` — override the PHP
+  extraction strategy. Default `auto` prefers Go-native
+  [phpsyms](https://github.com/thanhhaudev/phpsyms) and falls back to
+  tree-sitter on empty result. v0.25.0+.
 
 ## Uninstall
 
