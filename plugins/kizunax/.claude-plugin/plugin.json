@@ -1,6 +1,6 @@
 {
   "name": "kizunax",
-  "version": "0.27.1",
+  "version": "0.27.2",
   "description": "Claude Code plugin: AI code review via KizunaX.io.",
   "author": {
     "name": "thanhhaudev"
