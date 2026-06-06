@@ -35,6 +35,22 @@ Map the answer to a flag and append to args:
 - Quick → `--strategy=single`
 - Thorough → `--strategy=fanout`
 
+### Step 1.5 — Inline context (ONLY if `--add-context-prompt` is in args)
+
+If `--add-context-prompt` is NOT in the raw arguments, skip this step entirely.
+
+Otherwise ask once via `AskUserQuestion`:
+- Header: `Inline context`
+- Question: `Any context to add for THIS REVIEW only?`
+- Options:
+  - `Skip` — no inline context; proceed to Step 2
+  - `Type now` — capture free-form text from the next user message,
+    base64-encode it, and append `--context-text "<encoded>"` to the args
+    before continuing to Step 2
+
+This is per-review only — it is NOT persisted to .kizunax/review-context.md.
+For persistent context use `/kizunax:context` instead.
+
 ### Step 2 — Invoke the binary
 
 Pick execution mode based on the effective `--strategy`:
