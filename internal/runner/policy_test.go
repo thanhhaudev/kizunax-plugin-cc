@@ -25,11 +25,11 @@ func TestResolveExtractionPolicy_KnownValues(t *testing.T) {
 	cases := map[string]engine.ExtractionStrategy{
 		"auto":        engine.StrategyAuto,
 		"AUTO":        engine.StrategyAuto,
-		"gonative":    engine.StrategyGoNative,
-		"GoNative":    engine.StrategyGoNative,
+		"phpsyms":     engine.StrategyPhpsyms,
+		"Phpsyms":     engine.StrategyPhpsyms,
 		"treesitter":  engine.StrategyTreeSitter,
 		"regex":       engine.StrategyRegex,
-		"  gonative ": engine.StrategyGoNative, // trim
+		"  phpsyms ":  engine.StrategyPhpsyms, // trim
 	}
 	for in, want := range cases {
 		t.Run(in, func(t *testing.T) {

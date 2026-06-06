@@ -32,7 +32,7 @@ import (
 //
 // Recognized values (case-insensitive):
 //   - "" / "auto"      → StrategyAuto    (default)
-//   - "gonative"       → StrategyGoNative (force phpsyms)
+//   - "phpsyms"        → StrategyPhpsyms (force phpsyms)
 //   - "treesitter"     → StrategyTreeSitter (force tree-sitter)
 //   - "regex"          → StrategyRegex   (force regex fallback)
 func resolveExtractionPolicy() engine.ExtractionPolicy {
@@ -40,8 +40,8 @@ func resolveExtractionPolicy() engine.ExtractionPolicy {
 	switch strings.ToLower(strings.TrimSpace(os.Getenv("KIZUNAX_PHP_EXTRACTOR"))) {
 	case "", "auto":
 		p.PHP = engine.StrategyAuto
-	case "gonative":
-		p.PHP = engine.StrategyGoNative
+	case "phpsyms":
+		p.PHP = engine.StrategyPhpsyms
 	case "treesitter":
 		p.PHP = engine.StrategyTreeSitter
 	case "regex":
@@ -206,7 +206,7 @@ func Run(ctx context.Context, pluginRoot string, p provider.Provider, bundle dif
 
 	if opts.Verbose {
 		// Deterministic order so output is testable.
-		order := []string{"gonative", "treesitter", "regex", "auto", "unknown"}
+		order := []string{"phpsyms", "treesitter", "regex", "auto", "unknown"}
 		for _, name := range order {
 			count := extractCounts[name]
 			if count == 0 {

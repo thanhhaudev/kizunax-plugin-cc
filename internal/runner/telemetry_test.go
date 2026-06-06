@@ -28,12 +28,12 @@ func TestVerboseTelemetry_AggregatesPerStrategy(t *testing.T) {
 
 	// Drive a few synthetic events covering two strategies.
 	syms := []byte("<?php class Foo {}")
-	symbols.SetExtractionPolicy(2, 0, 0) // GoNative
+	symbols.SetExtractionPolicy(2, 0, 0) // Phpsyms
 	for i := 0; i < 3; i++ {
 		symbols.DispatchPHP(nil, nil, syms, fmt.Sprintf("F%d.php", i))
 	}
-	if extractCounts["gonative"] != 3 {
-		t.Errorf("gonative count: got %d, want 3", extractCounts["gonative"])
+	if extractCounts["phpsyms"] != 3 {
+		t.Errorf("phpsyms count: got %d, want 3", extractCounts["phpsyms"])
 	}
 
 	symbols.SetExtractionPolicy(3, 0, 0) // Regex
@@ -43,7 +43,7 @@ func TestVerboseTelemetry_AggregatesPerStrategy(t *testing.T) {
 	}
 
 	// Now re-create the print logic to confirm output format.
-	order := []string{"gonative", "treesitter", "regex", "auto", "unknown"}
+	order := []string{"phpsyms", "treesitter", "regex", "auto", "unknown"}
 	var buf bytes.Buffer
 	for _, name := range order {
 		count := extractCounts[name]
@@ -54,8 +54,8 @@ func TestVerboseTelemetry_AggregatesPerStrategy(t *testing.T) {
 		fmt.Fprintf(&buf, "[verbose] PHP extractor: %s, %d files, avg %.1fms/file\n", name, count, avgMs)
 	}
 	out := buf.String()
-	if !bytes.Contains(buf.Bytes(), []byte("PHP extractor: gonative, 3 files")) {
-		t.Errorf("expected gonative line; got:\n%s", out)
+	if !bytes.Contains(buf.Bytes(), []byte("PHP extractor: phpsyms, 3 files")) {
+		t.Errorf("expected phpsyms line; got:\n%s", out)
 	}
 	if !bytes.Contains(buf.Bytes(), []byte("PHP extractor: regex, 1 files")) {
 		t.Errorf("expected regex line; got:\n%s", out)
@@ -75,7 +75,7 @@ func TestVerboseTelemetry_EmitsNothingWhenNoExtractions(t *testing.T) {
 	})
 	// No DispatchPHP calls.
 
-	order := []string{"gonative", "treesitter", "regex", "auto", "unknown"}
+	order := []string{"phpsyms", "treesitter", "regex", "auto", "unknown"}
 	var emitted bool
 	for _, name := range order {
 		if extractCounts[name] > 0 {
