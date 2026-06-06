@@ -126,13 +126,25 @@ type Options struct {
 	ExpandTests    bool
 	ExpandAll      bool // shortcut: enables all three
 	NoExpand       bool // per-call kill switch
+
+	// v0.28.0: UseIndex enables the v2 AST-backed resolver via
+	// engine.Config.UseIndex. Set by the --use-index CLI flag. Precedence
+	// (highest first): KIZUNAX_DISABLE_INDEX kill switch > UseIndex flag >
+	// KIZUNAX_USE_INDEX env > per-workspace state file > default false.
+	UseIndex bool
+
+	// v0.28.0: Paths is the user's --paths value (repo-relative subtree
+	// list). Threaded to engine.ReviewOptions.ScopePaths so the resolver
+	// scope walk visits only files under these subtrees. Empty = walk
+	// full workspace.
+	Paths []string
 }
 
 func Run(ctx context.Context, pluginRoot string, p provider.Provider, bundle diff.Bundle, opts Options) (Result, error) {
 	// useIdx is the resolved kizunax-flag (env + state-file precedence).
 	// Determined here in the wrapper because the kizunax-specific state
 	// directory layout is wrapper concern, not engine concern.
-	useIdx := useIndexResolver(opts.WorkspaceDir)
+	useIdx := useIndexResolver(opts.WorkspaceDir, opts.UseIndex)
 
 	// For the --rescan path, the wrapper handles synchronous full rebuild
 	// BEFORE engine.Review runs so the engine sees a fresh index.
@@ -220,6 +232,7 @@ func Run(ctx context.Context, pluginRoot string, p provider.Provider, bundle dif
 		Model:          opts.Model,
 		Temperature:    opts.Temperature,
 		MaxTokens:      opts.MaxTokens,
+		ScopePaths:     opts.Paths,
 	}
 	res, err := eng.Review(ctx, bundle, rOpts)
 	if err != nil {
@@ -367,17 +380,20 @@ func combinedContext(file, inline string) string {
 }
 
 // useIndexResolver returns true if v0.13 index-backed resolver should be
-// tried. Precedence: KIZUNAX_DISABLE_INDEX kill switch > KIZUNAX_USE_INDEX
-// env > per-workspace state file > default false.
-// v0.13.0 default is opt-in; v0.13.2 will flip to opt-out.
-func useIndexResolver(ws state.WorkspaceDir) bool {
+// tried. Precedence (highest first): KIZUNAX_DISABLE_INDEX kill switch >
+// flagOverride (--use-index) > KIZUNAX_USE_INDEX env > per-workspace
+// state file > default false. The kill switch always wins so users can
+// disable the index without editing flags.
+func useIndexResolver(ws state.WorkspaceDir, flagOverride bool) bool {
 	if os.Getenv("KIZUNAX_DISABLE_INDEX") == "1" {
 		return false
+	}
+	if flagOverride {
+		return true
 	}
 	if os.Getenv("KIZUNAX_USE_INDEX") == "1" {
 		return true
 	}
-	// Fallback to persisted per-workspace flag.
 	if ws.Root != "" {
 		if s, err := state.LoadUseIndex(ws); err == nil && s.Enabled {
 			return true
